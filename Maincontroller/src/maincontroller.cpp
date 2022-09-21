@@ -95,6 +95,7 @@ AccelCalibrator *accelCalibrator=new AccelCalibrator();
 DataFlash *dataflash=new DataFlash();
 SDLog *sdlog=new SDLog();
 UWB *uwb=new UWB();
+Rangefinder_state rangefinder_state;
 
 float ahrs_pitch_rad(void){return pitch_rad;}
 float ahrs_roll_rad(void){return roll_rad;}
@@ -1165,6 +1166,12 @@ void send_mavlink_data(mavlink_channel_t chan)
 		rc_channels_t.chan6_raw=input_channel_6();
 		rc_channels_t.chan7_raw=input_channel_7();
 		rc_channels_t.chan8_raw=input_channel_8();
+		rc_channels_t.chan9_raw=input_channel_9();
+		rc_channels_t.chan10_raw=input_channel_10();
+		rc_channels_t.chan11_raw=input_channel_11();
+		rc_channels_t.chan12_raw=input_channel_12();
+		rc_channels_t.chan13_raw=input_channel_13();
+		rc_channels_t.chan14_raw=input_channel_14();
 		rc_channels_t.chancount=RC_INPUT_CHANNELS;
 		rc_channels_t.rssi=254;
 		mavlink_msg_rc_channels_encode(mavlink_system.sysid, mavlink_system.compid, &msg_rc_channels, &rc_channels_t);
@@ -1796,7 +1803,7 @@ void ahrs_update(void){
 }
 
 static float baro_alt_filt=0,baro_alt_init=0,baro_alt_last=0,baro_alt_correct=0,gnss_alt_last=0;
-static float rf_alt_delta=0, rf_alt_last=0, gnss_alt_delta=0,baro_alt_delta=0,vel_2d=0;
+static float rf_alt_delta=0, rf_alt_last=0, gnss_alt_delta=0,baro_alt_delta=0,vel_2d=0,accel_2d=0;
 static uint16_t init_baro=0;
 static float K_gain=0.0f;
 static bool rf_correct=false;
@@ -1855,15 +1862,17 @@ void update_baro_alt(void){
 		}
 		baro_alt_delta=baro_alt-baro_alt_last;
 		baro_alt_last=baro_alt;
-		if(rf_correct&&baro_alt_delta*rf_alt_delta<0){//防止水平飞行掉高和大风扰动
+		if(rf_correct&&(baro_alt_delta*rf_alt_delta<0||abs(baro_alt_delta)>15.0f)){//防止水平飞行掉高和大风扰动
 			baro_alt_delta=rf_alt_delta;
 		}else if(baro_alt_delta*gnss_alt_delta<0&&get_gps_state()&&K_gain>0.5f){//防止水平飞行掉高和大风扰动
 			baro_alt_delta=gnss_alt_delta;
 		}else{
-			if((abs(baro_alt_delta)>15||vel_2d>100)&&abs(get_vel_z())<100.0f){
-				baro_alt_delta=constrain_float(baro_alt_delta, -15.0f, 15.0f);
-			}else{
+			accel_2d=sqrtf(sq(get_accel_ef().x,get_accel_ef().y));
+			if(vel_2d<100&&accel_2d<100){
 				baro_alt_delta=baro_alt-baro_alt_correct;
+			}
+			if(abs(get_vel_z())<100.0f){
+				baro_alt_delta=constrain_float(baro_alt_delta, -15.0f, 15.0f);
 			}
 		}
 		baro_alt_correct+=baro_alt_delta;

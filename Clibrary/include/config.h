@@ -24,9 +24,9 @@
 
 #define PWM_ESC_MIN 1000	// 脉宽 1000us
 #define PWM_ESC_MAX 2000	// 脉宽 2000us
-#define PWM_ESC_SPIN_ARM 1100
-#define PWM_ESC_SPIN_MIN 1100
-#define PWM_ESC_SPIN_MAX 1900
+#define PWM_ESC_SPIN_ARM 1050
+#define PWM_ESC_SPIN_MIN 1050
+#define PWM_ESC_SPIN_MAX 1950
 
 #define PWM_BRUSH_MIN 0		// 脉宽 0us
 #define PWM_BRUSH_MAX 2500	// 脉宽 2500us

@@ -49,7 +49,7 @@ static bool mag_corrected=false, mag_correcting=false;
 static bool use_uwb_pos_z=false;
 static bool rc_channels_sendback=false;
 
-static float accel_filt_hz=10;//HZ
+static float accel_filt_hz=20;//HZ
 static float gyro_filt_hz=20;//HZ
 static float mag_filt_hz=5;//HZ
 static float baro_filt_hz=2;//HZ
@@ -57,7 +57,7 @@ static float accel_ef_filt_hz=10;//HZ
 static float uwb_pos_filt_hz=5;//HZ
 static float odom_pos_filt_hz=5;//HZ
 static float odom_vel_filt_hz=5;//HZ
-static float rangefinder_filt_hz=5;//HZ
+static float rangefinder_filt_hz=20;//HZ
 static float pitch_rad=0 , roll_rad=0 , yaw_rad=0;
 static float pitch_deg=0 , roll_deg=0 , yaw_deg=0;
 static float cos_roll=0, cos_pitch=0, cos_yaw=0, sin_roll=0, sin_pitch=0, sin_yaw=0;
@@ -1778,7 +1778,6 @@ void ahrs_update(void){
 		ahrs->update(mag_corrected, get_mav_yaw);
 		//由ahrs的四元数推出旋转矩阵用于控制
 		ahrs->quaternion2.rotation_matrix(dcm_matrix);
-		dcm_matrix.normalize();
 		attitude->set_rotation_body_to_ned(dcm_matrix);
 		gyro_ef=dcm_matrix*gyro_filt;
 		accel_ef=dcm_matrix*accel_filt;
@@ -2788,8 +2787,8 @@ void Logger_Cat_Callback(void){
 	sd_log_write("%8s %8s %8s %8s %8s %8s ",//LOG_POS_XY
 			"odom_x", "pos_x", "vel_x", "odom_y", "pos_y", "vel_y");
 	osDelay(1);
-	sd_log_write("%8s %8s %8s %8s %8s %8s ",//LOG_VEL_PID_XY
-			"v_p_x", "v_i_x", "v_d_x", "v_p_y", "v_i_y", "v_d_y");
+	sd_log_write("%8s %8s %8s %8s %8s %8s %8s %8s %8s ",//LOG_VEL_PID_XYZ
+			"v_p_x", "v_i_x", "v_d_x", "v_p_y", "v_i_y", "v_d_y", "a_p_z", "a_i_z", "a_d_z");
 	osDelay(1);
 	sd_log_write("%8s %8s %8s %8s %8s %8s %8s %8s ",//LOG_RCIN
 			"roll", "pitch", "yaw", "thr", "ch5", "ch6", "ch7", "ch8");
@@ -2840,8 +2839,10 @@ void Logger_Data_Callback(void){
 	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_POS_XY
 			get_odom_x(), get_pos_x(), get_vel_x(), get_odom_y(), get_pos_y(), get_vel_y());
 	osDelay(1);
-	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_VEL_PID_XY
-			pos_control->get_vel_xy_pid().get_p().x, pos_control->get_vel_xy_pid().get_integrator().x, pos_control->get_vel_xy_pid().get_d().x, pos_control->get_vel_xy_pid().get_p().y, pos_control->get_vel_xy_pid().get_integrator().y, pos_control->get_vel_xy_pid().get_d().y);
+	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_VEL_PID_XYZ
+			pos_control->get_vel_xy_pid().get_p().x, pos_control->get_vel_xy_pid().get_integrator().x, pos_control->get_vel_xy_pid().get_d().x,
+			pos_control->get_vel_xy_pid().get_p().y, pos_control->get_vel_xy_pid().get_integrator().y, pos_control->get_vel_xy_pid().get_d().y,
+			pos_control->get_accel_z_pid().get_p(), pos_control->get_accel_z_pid().get_integrator(), pos_control->get_accel_z_pid().get_d());
 	osDelay(1);
 	sd_log_write("%8d %8d %8d %8d %8d %8d %8d %8d ",//LOG_RCIN
 			input_channel_roll(), input_channel_pitch(), input_channel_yaw(), input_channel_throttle(), input_channel_5(), input_channel_6(), input_channel_7(), input_channel_8());

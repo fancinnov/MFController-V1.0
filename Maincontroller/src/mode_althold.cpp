@@ -29,6 +29,7 @@ void mode_althold(void){
 	// initialize vertical speeds and acceleration
 	pos_control->set_speed_z(-param->pilot_speed_dn.value, param->pilot_speed_up.value);
 	pos_control->set_accel_z(param->pilot_accel_z.value);
+	update_air_resistance();
 
 	// get pilot desired lean angles
 	float target_roll, target_pitch;
@@ -90,6 +91,8 @@ void mode_althold(void){
 		get_takeoff_climb_rates(target_climb_rate, takeoff_climb_rate);
 
 		// call attitude controller
+		target_yaw+=target_yaw_rate*_dt;
+		get_air_resistance_lean_angles(target_roll, target_pitch, param->angle_max.value);
 		attitude->input_euler_angle_roll_pitch_yaw(target_roll, target_pitch, target_yaw, true);
 
 		// call position controller
@@ -122,6 +125,7 @@ void mode_althold(void){
 		motors->set_desired_spool_state(Motors::DESIRED_THROTTLE_UNLIMITED);
 		// call attitude controller
 		target_yaw+=target_yaw_rate*_dt;
+		get_air_resistance_lean_angles(target_roll, target_pitch, param->angle_max.value);
 		attitude->input_euler_angle_roll_pitch_yaw(target_roll, target_pitch, target_yaw, true);
 
 		if(robot_state_desired==STATE_DRIVE||robot_state_desired==STATE_LANDED){//自动降落

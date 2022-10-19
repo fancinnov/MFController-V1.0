@@ -78,7 +78,7 @@ static Matrix3f dcm_matrix, dcm_matrix_correct;										//旋转矩阵
 static LowPassFilter2pVector3f	_accel_filter, _gyro_filter, _accel_ef_filter;
 static LowPassFilterFloat _baro_alt_filter;
 static LowPassFilterVector3f _mag_filter, _uwb_pos_filter;
-static LowPassFilterVector2f _odom_vel_filter, _odom_pos_filter;
+static LowPassFilterVector2f _odom_vel_filter, _odom_pos_filter, _air_resistance_filter;
 
 parameter *param=new parameter();
 ap_t *ap=new ap_t();
@@ -1500,19 +1500,19 @@ void update_accel_gyro_data(void){
 		}
 	}
 //	usb_printf("ax:%f,ay:%f,az:%f\n",accel.x,accel.y,accel.z);
-	gyro.x = mpu6887_data.gyrof.x;//°/s
-	gyro.y = mpu6887_data.gyrof.y;//°/s
-	gyro.z = mpu6887_data.gyrof.z;//°/s
+	gyro.x = mpu6887_data.gyrof.x;//rad/s
+	gyro.y = mpu6887_data.gyrof.y;//rad/s
+	gyro.z = mpu6887_data.gyrof.z;//rad/s
 
 	if((is_equal(gyro.length(),0.0f)) || isnan(gyro.x) || isinf(gyro.x) || isnan(gyro.y) || isinf(gyro.y) || isnan(gyro.z) || isinf(gyro.z)){
 		imu_healthy=false;
-		gyro.x = adis16470_data.gyrof.x;//°/s
-		gyro.y = adis16470_data.gyrof.y;//°/s
-		gyro.z = adis16470_data.gyrof.z;//°/s
+		gyro.x = adis16470_data.gyrof.x;//rad/s
+		gyro.y = adis16470_data.gyrof.y;//rad/s
+		gyro.z = adis16470_data.gyrof.z;//rad/s
 		if((is_equal(gyro.length(),0.0f)) || isnan(gyro.x) || isinf(gyro.x) || isnan(gyro.y) || isinf(gyro.y) || isnan(gyro.z) || isinf(gyro.z)){
-			gyro.x = qmi8658_data.gyrof.x;//°/s
-			gyro.y = qmi8658_data.gyrof.y;//°/s
-			gyro.z = qmi8658_data.gyrof.z;//°/s
+			gyro.x = qmi8658_data.gyrof.x;//rad/s
+			gyro.y = qmi8658_data.gyrof.y;//rad/s
+			gyro.z = qmi8658_data.gyrof.z;//rad/s
 			if((is_equal(gyro.length(),0.0f)) || isnan(gyro.x) || isinf(gyro.x) || isnan(gyro.y) || isinf(gyro.y) || isnan(gyro.z) || isinf(gyro.z)){
 				return;
 			}
@@ -1535,6 +1535,7 @@ void update_accel_gyro_data(void){
 			_accel_filter.set_cutoff_frequency(400, accel_filt_hz);
 			_gyro_filter.set_cutoff_frequency(400, gyro_filt_hz);
 			_accel_ef_filter.set_cutoff_frequency(400, accel_ef_filt_hz);
+			_air_resistance_filter.set_cutoff_frequency(400, accel_ef_filt_hz);
 			ahrs_stage_compass=true;
 		}
 	}else{
@@ -1847,13 +1848,8 @@ void update_baro_alt(void){
 			vel_2d=0.0f;
 		}
 		if(rangefinder_state.alt_healthy){
-			if(rf_correct){
-				rf_alt_delta=rangefinder_state.alt_cm-rf_alt_last;
-				rf_alt_last=rangefinder_state.alt_cm;
-			}else{
-				rf_alt_delta=0.0f;
-				rf_alt_last=rangefinder_state.alt_cm;
-			}
+			rf_alt_delta=rangefinder_state.alt_cm-rf_alt_last;
+			rf_alt_last=rangefinder_state.alt_cm;
 			if(abs(rf_alt_delta)<100.0f&&!is_equal(rf_alt_delta,0.0f)){
 				rf_correct=true;
 			}else{
@@ -1867,7 +1863,7 @@ void update_baro_alt(void){
 		accel_2d=sqrtf(sq(get_accel_ef().x,get_accel_ef().y));
 		if(rf_correct&&(baro_alt_delta*rf_alt_delta<0||abs(baro_alt_delta)>15.0f||accel_2d>1.0f)){//防止水平飞行掉高和大风扰动
 			baro_alt_delta=rf_alt_delta;
-		}else if(K_gain>0.5f&&(abs(baro_alt_delta)>15.0f||accel_2d>1.0f)&&abs(gnss_alt_delta)<100.0f){//防止水平飞行掉高和大风扰动
+		}else if(K_gain>0.2f&&(abs(baro_alt_delta)>15.0f||accel_2d>1.0f)&&abs(gnss_alt_delta)<100.0f){//防止水平飞行掉高和大风扰动
 			baro_alt_delta=gnss_alt_delta;
 		}else{
 			if(vel_2d<100&&accel_2d<1.0f){
@@ -1913,6 +1909,7 @@ void gnss_update(void){
 			gnss_origin_pos.lat=gps_position->lat;//纬度:deg*1e-7
 			gnss_origin_pos.lng=gps_position->lon;//经度:deg*1e-7
 			gnss_origin_pos.alt=gps_position->alt/10;//海拔：cm
+			ahrs->set_declination(radians(Declination::get_declination((float)gnss_origin_pos.lat*1e-7, (float)gnss_origin_pos.lng*1e-7)));
 			initial_gnss=true;
 		}
 		sDate.Year=gps_position->year-1970;
@@ -2283,56 +2280,57 @@ void set_accel_throttle_I_from_pilot_throttle()
 
 // get_pilot_desired_angle - transform pilot's roll or pitch input into a desired lean angle
 // returns desired angle in degrees
-static float roll_out_c=0.0f, pitch_out_c=0.0f;
 void get_pilot_desired_lean_angles(float &roll_out, float &pitch_out, float angle_max, float angle_limit)
 {
     // fetch roll and pitch inputs
-    float roll_out_t = get_channel_roll_angle();
-    float pitch_out_t = get_channel_pitch_angle();
+    roll_out = get_channel_roll_angle();
+    pitch_out = get_channel_pitch_angle();
 
     // limit max lean angle
     angle_limit = constrain_float(angle_limit, 10.0f, angle_max);
 
     // scale roll and pitch inputs to ANGLE_MAX parameter range
     float scaler = angle_max/(float)ROLL_PITCH_YAW_INPUT_MAX;
-    roll_out_t *= scaler;
-    pitch_out_t *= scaler;
+    roll_out *= scaler;
+    pitch_out *= scaler;
 
     // do circular limit
-    float total_in = norm(pitch_out_t, roll_out_t);
+    float total_in = norm(pitch_out, roll_out);
     if (total_in > angle_limit) {
         float ratio = angle_limit / total_in;
-        roll_out_t *= ratio;
-        pitch_out_t *= ratio;
+        roll_out *= ratio;
+        pitch_out *= ratio;
     }
 
     // do lateral tilt to euler roll conversion
-    roll_out_t = (180/M_PI) * atanf(cosf(pitch_out_t*(M_PI/180))*tanf(roll_out_t*(M_PI/180)));
-
-    if(get_gps_state()){
-		angle_limit/=constrain_float(sqrtf(sq(get_vel_x(),get_vel_y()))/100.0f, 1.0f, 3.0f);//速度越大，最大倾角越小
-		roll_out_t=constrain_float(roll_out_t, -angle_limit, angle_limit);
-		pitch_out_t=constrain_float(pitch_out_t, -angle_limit, angle_limit);
-	}
+    roll_out = (180/M_PI) * atanf(cosf(pitch_out*(M_PI/180))*tanf(roll_out*(M_PI/180)));
 
     // roll_out and pitch_out are returned
-    float deg_dt=180.0*_dt;//限制最大摇杆输入为180deg/s
-    if(roll_out_t-roll_out_c>deg_dt){
-    	roll_out_c+=deg_dt;
-    }else if(roll_out_t-roll_out_c<-deg_dt){
-    	roll_out_c-=deg_dt;
-    }else{
-    	roll_out_c=roll_out_t;
-    }
-    if(pitch_out_t-pitch_out_c>deg_dt){
-    	pitch_out_c+=deg_dt;
-	}else if(pitch_out_t-pitch_out_c<-deg_dt){
-		pitch_out_c-=deg_dt;
-	}else{
-		pitch_out_c=pitch_out_t;
+}
+
+static Vector2f air_resistance_bf;
+void update_air_resistance(void)
+{
+	const float euler_roll_angle = ahrs_roll_rad();
+	const float euler_pitch_angle = ahrs_pitch_rad();
+	const float pilot_cos_pitch_target = cosf(euler_pitch_angle);
+	const float pilot_accel_rgt = GRAVITY_MSS * tanf(euler_roll_angle)/pilot_cos_pitch_target;
+	const float pilot_accel_fwd = -GRAVITY_MSS * tanf(euler_pitch_angle);
+
+	air_resistance_bf.x=pilot_accel_fwd - (accel_ef.x*cos_yaw + accel_ef.y*sin_yaw);
+	air_resistance_bf.y=pilot_accel_rgt - (-accel_ef.x*sin_yaw + accel_ef.y*cos_yaw);
+	air_resistance_bf=_air_resistance_filter.apply(air_resistance_bf);
+}
+
+void get_air_resistance_lean_angles(float &roll_d, float &pitch_d, float angle_max)
+{
+    float angle_limit=angle_max/constrain_float(air_resistance_bf.length(), 1.0f, 3.0f);
+    float total_in = norm(roll_d, pitch_d);
+    if (total_in > angle_limit) {
+		float ratio = angle_limit / total_in;
+		roll_d *= ratio;
+		pitch_d *= ratio;
 	}
-    roll_out=roll_out_c;
-    pitch_out=pitch_out_c;
 }
 
 /******************take off functions start*********************/
@@ -2798,8 +2796,8 @@ void Logger_Cat_Callback(void){
 	sd_log_write("%8s %8s %8s %8s %8s %8s ",//LOG_SENSOR
 			"imu3_ax", "imu3_ay", "imu3_az", "imu3_gx", "imu3_gy", "imu3_gz");
 	osDelay(1);
-	sd_log_write("%8s %8s %8s %8s %8s %8s ",//LOG_EULER
-			"pitchr", "rollr", "yawr", "pitchd", "rolld", "yawd");
+	sd_log_write("%8s %8s %8s %8s %8s %8s %8s ",//LOG_EULER
+			"pitchr", "rollr", "yawr", "pitchd", "rolld", "yawd", "rtk_yawd");
 	osDelay(1);
 	sd_log_write("%8s %8s %8s %8s %8s %8s %8s %8s ",//LOG_ACCEL_EARTH_FRAME and VIB
 			"gyrox_t", "gyroy_t", "gyroz_t", "efx", "efy", "efz", "vib_vl", "vib_ag");
@@ -2850,8 +2848,8 @@ void Logger_Data_Callback(void){
 	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_SENSOR
 			qmi8658_data.accf.x, qmi8658_data.accf.y, qmi8658_data.accf.z, qmi8658_data.gyrof.x, qmi8658_data.gyrof.y, qmi8658_data.gyrof.z);
 	osDelay(1);
-	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_EULER
-			ahrs_pitch_rad(), ahrs_roll_rad(), ahrs_yaw_rad(), ahrs_pitch_deg(), ahrs_roll_deg(), ahrs_yaw_deg());
+	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_EULER
+			ahrs_pitch_rad(), ahrs_roll_rad(), ahrs_yaw_rad(), ahrs_pitch_deg(), ahrs_roll_deg(), ahrs_yaw_deg(), gps_position->heading);
 	osDelay(1);
 	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_ACCEL_EARTH_FRAME and VIB
 			attitude->rate_bf_targets().x, attitude->rate_bf_targets().y, attitude->rate_bf_targets().z, get_accel_ef().x, get_accel_ef().y, get_accel_ef().z, get_vib_value(), get_vib_angle_z());

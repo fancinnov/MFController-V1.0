@@ -278,7 +278,7 @@ void InitTask(void *argument)
   set_s3_baudrate(115200);
   set_s4_baudrate(115200);
   set_s5_baudrate(115200);
-  usb_printf("\r\nSystem initializing ...\r\n");
+  usb_printf("\r\nSystem: MFController-V%ld-%ld initializing ...\r\n",VERSION_HARDWARE, VERSION_FIRMWARE);
   FRAM_Init();
   update_dataflash();
   RC_Input_Init(RC_INPUT_SBUS);
@@ -351,6 +351,7 @@ void Loop200hzTask(void *argument)
   {
 	osThreadFlagsWait(1, osFlagsWaitAny, osWaitForever);
 	comm_callback();
+	offboard_callback();
   }
   /* USER CODE END Loop200hzTask */
 }

@@ -168,6 +168,13 @@
 #define ACRO_YAW_EXPO 0.0f
 #define ACRO_YAW_P 1.5f
 #define MAN_THR_FILT_HZ 0.5f
+#define LOWBATT_RETURN_VOLT 0.0f
+#define LOWBATT_LAND_VOLT 0.0f
+#define POSHOLD_VEL_MAX 500.0f		//5m/s
+#define POSHOLD_ACCEL_MAX 300.0f	//3m/ss
+#define MISSION_VEL_MAX 500.0f		//5m/s
+#define MISSION_ACCEL_MAX 100.0f	//1m/ss
+#define ALT_RETURN	1000.0f			//10m
 
 bool arm_motors(void);
 void disarm_motors(void);
@@ -235,7 +242,7 @@ float get_mav_vy_target(void);
 
 float get_vib_value(void);
 float get_vib_angle_z(void);
-
+bool get_gcs_connected(void);
 bool get_gnss_location_state(void);
 bool has_manual_throttle(void);
 void set_manual_throttle(bool manual_throttle);
@@ -686,6 +693,48 @@ typedef struct{
 		dataflash_type type=VECTOR3F;
 		Vector3f value={0,0,0};
 	}rate_pid_integrator;
+
+	struct lowbatt_return_volt{
+		uint16_t num=36;
+		dataflash_type type=FLOAT;
+		float value=LOWBATT_RETURN_VOLT;
+	}lowbatt_return_volt;
+
+	struct lowbatt_land_volt{
+		uint16_t num=37;
+		dataflash_type type=FLOAT;
+		float value=LOWBATT_LAND_VOLT;
+	}lowbatt_land_volt;
+
+	struct poshold_vel_max{
+		uint16_t num=38;
+		dataflash_type type=FLOAT;
+		float value=POSHOLD_VEL_MAX;
+	}poshold_vel_max;
+
+	struct poshold_accel_max{
+		uint16_t num=39;
+		dataflash_type type=FLOAT;
+		float value=POSHOLD_ACCEL_MAX;
+	}poshold_accel_max;
+
+	struct mission_vel_max{
+		uint16_t num=40;
+		dataflash_type type=FLOAT;
+		float value=MISSION_VEL_MAX;
+	}mission_vel_max;
+
+	struct mission_accel_max{
+		uint16_t num=41;
+		dataflash_type type=FLOAT;
+		float value=MISSION_ACCEL_MAX;
+	}mission_accel_max;
+
+	struct alt_return{
+		uint16_t num=42;
+		dataflash_type type=FLOAT;
+		float value=ALT_RETURN;
+	}alt_return;
 
 	/* *************************************************
 	 * ****************Dev code begin*******************/

@@ -109,6 +109,8 @@ void mode_perch(void){
 		get_takeoff_climb_rates(target_climb_rate, takeoff_climb_rate);
 
 		// call attitude controller
+		target_yaw+=target_yaw_rate*_dt;
+		get_air_resistance_lean_angles(target_roll, target_pitch, DEFAULT_ANGLE_MAX, 1.0f);
 		attitude->input_euler_angle_roll_pitch_yaw(target_roll, target_pitch, target_yaw, true);
 
 		// call position controller
@@ -142,6 +144,7 @@ void mode_perch(void){
 
 		// call attitude controller
 		target_yaw+=target_yaw_rate*_dt;
+		get_air_resistance_lean_angles(target_roll, target_pitch, DEFAULT_ANGLE_MAX, 1.0f);
 		attitude->input_euler_angle_roll_pitch_yaw(target_roll, target_pitch, target_yaw, true);
 
 		if(robot_state_desired==STATE_DRIVE||robot_state_desired==STATE_LANDED){//自动降落

@@ -91,4 +91,7 @@
 	#define DATA_FLASH_LENGTH ((uint32_t)0x00000020) /* each data package takes 32 bytes */
 #endif
 
+#define VERSION_HARDWARE 320
+#define VERSION_FIRMWARE 2022102501
+
 #endif /* INCLUDE_CONFIG_H_ */

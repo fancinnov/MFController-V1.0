@@ -1674,7 +1674,6 @@ void update_accel_gyro_data(void){
 			_accel_filter.set_cutoff_frequency(400, accel_filt_hz);
 			_gyro_filter.set_cutoff_frequency(400, gyro_filt_hz);
 			_accel_ef_filter.set_cutoff_frequency(400, accel_ef_filt_hz);
-			_air_resistance_filter.set_cutoff_frequency(400, accel_ef_filt_hz);
 			ahrs_stage_compass=true;
 		}
 	}else{

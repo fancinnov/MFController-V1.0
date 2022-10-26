@@ -44,10 +44,10 @@ void mode_poshold(void){
 	pos_control->set_speed_xy(param->poshold_vel_max.value);
 	pos_control->set_accel_xy(param->poshold_accel_max.value);
 
-	if((use_gcs&&!get_gcs_connected())||(get_batt_volt()<param->lowbatt_return_volt.value)){//电量较低或地面站断开连接，强制返航
+	if((use_gcs&&!get_gcs_connected())||(get_power_volt()<param->lowbatt_return_volt.value)){//电量较低或地面站断开连接，强制返航
 //		execute_return=true;
 	}
-	if(get_batt_volt()<param->lowbatt_land_volt.value){//电量过低，强制降落
+	if(get_power_volt()<param->lowbatt_land_volt.value){//电量过低，强制降落
 //		execute_land=true;
 	}
 
@@ -229,9 +229,9 @@ void mode_poshold(void){
 				target_yaw+=target_yaw_rate*_dt;
 				attitude->input_euler_angle_roll_pitch_yaw(pos_control->get_roll(), pos_control->get_pitch(), target_yaw, true);
 			}else{//巡线模式
-				pos_control->set_speed_xy(param->mission_vel_max.value);
-				pos_control->set_accel_xy(param->mission_accel_max.value);
 				if(gnss_point_num>0){
+					pos_control->set_speed_xy(param->mission_vel_max.value);
+					pos_control->set_accel_xy(param->mission_accel_max.value);
 					if(target_point<gnss_point_num){
 						gnss_target_pos.lat=(int32_t)(gnss_point_prt[target_point].x*1e7);
 						gnss_target_pos.lng=(int32_t)(gnss_point_prt[target_point].y*1e7);

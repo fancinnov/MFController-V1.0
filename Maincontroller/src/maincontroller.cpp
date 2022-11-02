@@ -375,6 +375,8 @@ static mavlink_set_position_target_local_ned_t set_position_target_local_ned;
 static Vector3f lidar_offset=Vector3f(0.0f,0.0f, -16.0f);//cm
 static uint8_t gcs_channel=255;
 static uint16_t gnss_point_statis=0;
+static float motor_test_type=0.0f,motor_test_throttle=0.0f,motor_test_timeout=0.0f,motor_test_num=0.0f;
+static uint32_t motor_test_start_time=0;
 //发送
 static mavlink_system_t mavlink_system;
 static mavlink_message_t msg_global_attitude_position, msg_global_position_int, msg_command_long, msg_battery_status, msg_rc_channels, msg_mission_count, msg_mission_item, msg_system_version;
@@ -398,13 +400,13 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 					system_version.ts1=VERSION_FIRMWARE;
 					mavlink_msg_timesync_encode(mavlink_system.sysid, mavlink_system.compid, &msg_system_version, &system_version);
 					mavlink_send_buffer(chan, &msg_system_version);
-					if(chan==EVENTBIT_HEARTBEAT_COMM_0){
-						offboard_connected=true;
-					}
 				}
 				time_last_heartbeat[(uint8_t)chan]=HAL_GetTick();
 				if(heartbeat.type==MAV_TYPE_GCS){//地面站
 					gcs_channel=chan;
+				}
+				if(chan==MAVLINK_COMM_0){
+					offboard_connected=true;
 				}
 				break;
 			case MAVLINK_MSG_ID_SET_MODE:
@@ -463,6 +465,13 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 				switch(cmd.command){
 					case MAV_CMD_NAV_TAKEOFF:
 						set_takeoff(true);
+						break;
+					case MAV_CMD_DO_MOTOR_TEST:
+						motor_test_type=cmd.param1; 	//1.0
+						motor_test_throttle=cmd.param2; //0~1.0
+						motor_test_timeout=cmd.param3; 	//单位：s
+						motor_test_num=cmd.param4;		//0~8
+						motor_test_start_time=HAL_GetTick();
 						break;
 					case MAV_CMD_PREFLIGHT_CALIBRATION:
 						if(is_equal(cmd.param1,1.0f)){					//start accel calibrate
@@ -1008,7 +1017,9 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 					mav_channels_in[5]=rc_channels.chan6_raw;
 					mav_channels_in[6]=rc_channels.chan7_raw;
 					mav_channels_in[7]=rc_channels.chan8_raw;
-					set_rc_channels_override(true);				//使能rc_channels_override把控制权给APP
+					if(chan==gcs_channel){
+						set_rc_channels_override(true);				//使能rc_channels_override把控制权给APP
+					}
 					rc_channels_sendback=false;					//关闭遥控通道回传
 				}else if(rc_channels.target_component==1){		/***遥控校准已确认***/
 					set_rc_channels_override(false);			//清除rc_channels_override把控制权给遥控器
@@ -1181,13 +1192,13 @@ static uint8_t accel_cali_num=0;
 static uint32_t takeoff_time=0;
 void send_mavlink_data(mavlink_channel_t chan)
 {
-	if((HAL_GetTick()-time_last_heartbeat[(uint8_t)chan])>5000){
+	if((HAL_GetTick()-time_last_heartbeat[(uint8_t)chan])>5000&&(HeartBeatFlags&(EVENTBIT_HEARTBEAT_COMM_0<<(uint8_t)chan))){
 		HeartBeatFlags&=(0xFF^(EVENTBIT_HEARTBEAT_COMM_0<<(uint8_t)chan));
-		set_rc_channels_override(false);
 		if(chan==gcs_channel){
 			gcs_connected=false;
+			set_rc_channels_override(false);
 		}
-		if(offboard_connected){
+		if(chan==MAVLINK_COMM_0){
 			offboard_connected=false;
 		}
 		return;
@@ -2439,28 +2450,52 @@ void get_pilot_desired_lean_angles(float &roll_out, float &pitch_out, float angl
 }
 
 static Vector2f air_resistance_bf;
+static Vector2f pilot_actual_accel;
 void update_air_resistance(void)
 {
 	const float euler_roll_angle = ahrs_roll_rad();
 	const float euler_pitch_angle = ahrs_pitch_rad();
 	const float pilot_cos_pitch_target = cosf(euler_pitch_angle);
-	const float pilot_accel_rgt = GRAVITY_MSS * tanf(euler_roll_angle)/pilot_cos_pitch_target;
-	const float pilot_accel_fwd = -GRAVITY_MSS * tanf(euler_pitch_angle);
+	pilot_actual_accel.y = GRAVITY_MSS * tanf(euler_roll_angle)/pilot_cos_pitch_target;
+	pilot_actual_accel.x = -GRAVITY_MSS * tanf(euler_pitch_angle);
 
-	air_resistance_bf.x=pilot_accel_fwd - (accel_ef.x*cos_yaw + accel_ef.y*sin_yaw);
-	air_resistance_bf.y=pilot_accel_rgt - (-accel_ef.x*sin_yaw + accel_ef.y*cos_yaw);
+	air_resistance_bf.x=pilot_actual_accel.x - (accel_ef.x*cos_yaw + accel_ef.y*sin_yaw);
+	air_resistance_bf.y=pilot_actual_accel.y - (-accel_ef.x*sin_yaw + accel_ef.y*cos_yaw);
 	air_resistance_bf=_air_resistance_filter.apply(air_resistance_bf);
 }
 
+static float angle_limit=DEFAULT_ANGLE_MAX;
+static bool limit_angle=false;
+static Vector2f pilot_desire_accel;
 void get_air_resistance_lean_angles(float &roll_d, float &pitch_d, float angle_max, float gain)
 {
-    float angle_limit=angle_max/constrain_float(air_resistance_bf.length()*gain, 1.0f, 3.0f);
+	const float pilot_cos_pitch_target = cosf(radians(pitch_d));
+	pilot_desire_accel.x=-GRAVITY_MSS * tanf(radians(pitch_d));
+	pilot_desire_accel.y = GRAVITY_MSS * tanf(radians(roll_d))/pilot_cos_pitch_target;
+	if(pilot_desire_accel.length()>1.0f){
+		if(get_gps_state()){
+			float vel_2d=sqrtf(sq(get_vel_x(),get_vel_y()))/100.0f;
+			angle_limit=angle_max*2.0/3.0/constrain_float(vel_2d*gain/3.0f, 1.0f, 2.0f);
+		}else{
+			if(air_resistance_bf.length()<pilot_actual_accel.length()&&!limit_angle){
+				angle_limit=angle_max*2.0/3.0/constrain_float(air_resistance_bf.length()*gain, 1.0f, 2.0f);
+			}else{
+				limit_angle=true;
+			}
+		}
+	}else if(pilot_desire_accel.length()<1.0f){
+		angle_limit=angle_max;
+		limit_angle=false;
+	}
+
     float total_in = norm(roll_d, pitch_d);
     if (total_in > angle_limit) {
 		float ratio = angle_limit / total_in;
 		roll_d *= ratio;
 		pitch_d *= ratio;
 	}
+    roll_d=constrain_float(roll_d, ahrs_roll_deg()-angle_limit, ahrs_roll_deg()+angle_limit);
+    pitch_d=constrain_float(pitch_d, ahrs_pitch_deg()-angle_limit, ahrs_pitch_deg()+angle_limit);
 }
 
 /******************take off functions start*********************/
@@ -2967,7 +3002,7 @@ void Logger_Cat_Callback(void){
  * ***********************************/
 void Logger_Data_Callback(void){
 	sd_log_write("%8ld %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_SENSOR
-			HAL_GetTick(), get_accel_filt().x, get_accel_filt().y, get_accel_filt().z,	get_gyro_filt().x, get_gyro_filt().y, get_gyro_filt().z);
+			HAL_GetTick(), get_accel_filt().x, get_accel_filt().y, get_accel_filt().z, get_gyro_filt().x, get_gyro_filt().y, get_gyro_filt().z);
 	osDelay(1);
 	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8d ",//LOG_SENSOR
 			get_mag_correct().x, get_mag_correct().y, get_mag_correct().z, spl06_data1.baro_alt, get_power_volt(), get_power_current(), gps_position->satellites_used);
@@ -3021,7 +3056,7 @@ void Logger_Update(void){
 
 static mavlink_message_t msg_scaled_imu;
 static mavlink_scaled_imu_t scaled_imu;
-void offboard_callback(void){
+void usbsend_callback(void){
 	if(offboard_connected){
 		scaled_imu.time_boot_ms=HAL_GetTick();
 		scaled_imu.xacc=(uint16_t)(get_accel_filt().x*1000);
@@ -3032,6 +3067,13 @@ void offboard_callback(void){
 		scaled_imu.zgyro=(uint16_t)(get_gyro_filt().z*1000);
 		mavlink_msg_scaled_imu_encode(mavlink_system.sysid, mavlink_system.compid, &msg_scaled_imu, &scaled_imu);
 		mavlink_send_buffer(MAVLINK_COMM_0, &msg_scaled_imu);
+	}
+	flush_usb_data();
+}
+
+void motors_test_update(void){
+	if(motor_test_type>0.5f&&(HAL_GetTick()-motor_test_start_time)<(uint32_t)(motor_test_timeout*1000.0f)){
+		motors->set_throttle_passthrough_for_motor((uint8_t)motor_test_num, motor_test_throttle);
 	}
 }
 

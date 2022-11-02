@@ -212,7 +212,7 @@ void arm_motors_check(void);
 bool mode_init(void);
 void mode_update(void);
 void rgb_update(void);
-void offboard_callback(void);
+void usbsend_callback(void);
 void debug(void);
 /****************c/c++ interface*******************************/
 bool get_task_initialed(void);
@@ -548,6 +548,7 @@ HAL_StatusTypeDef s5_send_buf_delayms(uint8_t* buf, uint16_t size, uint32_t time
   * @retval None
   */
 void mavlink_send_buffer(mavlink_channel_t chan, mavlink_message_t *msg);
+void flush_usb_data(void);
 //把mavlink缓冲区中的数据以非阻塞方式从MAVLINK_COMM_0~MAVLINK_COMM_4中发送出去
 void mav_send_data(void);
 #define EVENTBIT_HEARTBEAT_COMM_0 (1<<0) //usb

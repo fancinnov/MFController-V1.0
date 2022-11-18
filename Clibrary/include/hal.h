@@ -662,6 +662,7 @@ bool get_rc_channels_override(void);//获取Mavlink覆盖遥控器信号
 void override_rc_channels(uint16_t *pwm_in);
 extern uint16_t *channels_in;
 extern uint16_t *mav_channels_in;
+bool rc_channels_healthy(void);
 
 //初始化wifi模组
 void wifi_init(void);

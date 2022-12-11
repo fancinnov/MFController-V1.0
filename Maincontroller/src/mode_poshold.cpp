@@ -136,19 +136,28 @@ void mode_poshold(void){
 		get_takeoff_climb_rates(target_climb_rate, takeoff_climb_rate);
 
 		// call attitude controller
-		if(ch7>=0.7&&ch7<=1.0){//手动模式(上挡位)
-			get_air_resistance_lean_angles(target_roll, target_pitch, DEFAULT_ANGLE_MAX, 1.0f);
+		if(!get_gps_state()){//定位丢失，强制手动
 			target_yaw=ahrs_yaw_deg();
+			get_air_resistance_lean_angles(target_roll, target_pitch, DEFAULT_ANGLE_MAX, 1.0f);
 			attitude->input_euler_angle_roll_pitch_euler_rate_yaw(target_roll, target_pitch, target_yaw_rate);
 			pos_control->set_xy_target(get_pos_x(), get_pos_y());
 			pos_control->reset_predicted_accel(get_vel_x(), get_vel_y());
-		}else{//定位模式(下挡位)
-			pos_control->set_pilot_desired_acceleration(target_roll, target_pitch, target_yaw, _dt);
-			pos_control->calc_desired_velocity(_dt);
-			pos_control->update_xy_controller(_dt, get_pos_x(), get_pos_y(), get_vel_x(), get_vel_y());
-			target_yaw=ahrs_yaw_deg();
-			attitude->input_euler_angle_roll_pitch_euler_rate_yaw(pos_control->get_roll(), pos_control->get_pitch(), target_yaw_rate);
+		}else{
+			if(ch7>=0.7&&ch7<=1.0){//手动模式(上挡位)
+				get_air_resistance_lean_angles(target_roll, target_pitch, DEFAULT_ANGLE_MAX, 1.0f);
+				target_yaw=ahrs_yaw_deg();
+				attitude->input_euler_angle_roll_pitch_euler_rate_yaw(target_roll, target_pitch, target_yaw_rate);
+				pos_control->set_xy_target(get_pos_x(), get_pos_y());
+				pos_control->reset_predicted_accel(get_vel_x(), get_vel_y());
+			}else{//定位模式(下挡位)
+				pos_control->set_pilot_desired_acceleration(target_roll, target_pitch, target_yaw, _dt);
+				pos_control->calc_desired_velocity(_dt);
+				pos_control->update_xy_controller(_dt, get_pos_x(), get_pos_y(), get_vel_x(), get_vel_y());
+				target_yaw=ahrs_yaw_deg();
+				attitude->input_euler_angle_roll_pitch_euler_rate_yaw(pos_control->get_roll(), pos_control->get_pitch(), target_yaw_rate);
+			}
 		}
+
 		// call position controller
 		pos_control->set_alt_target_from_climb_rate_ff(target_climb_rate, _dt, false);
 		pos_control->add_takeoff_climb_rate(takeoff_climb_rate, _dt);

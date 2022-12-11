@@ -46,11 +46,11 @@ void fdcan_update(void){//以自己需要的频率循环运行即可
 	fdcan1TxHeader->Identifier = 0x200;//配置发送数据id
 	fdcan1TxData[0]=5000>>8;
 	fdcan1TxData[1]=5000&0xFF;
-	fdcan1TxData[2]=0;
-	fdcan1TxData[3]=0;
-	fdcan1TxData[4]=0;
-	fdcan1TxData[5]=0;
-	fdcan1TxData[6]=0;
-	fdcan1TxData[7]=0;
+	fdcan1TxData[2]=5000>>8;
+	fdcan1TxData[3]=5000&0xFF;
+	fdcan1TxData[4]=5000>>8;
+	fdcan1TxData[5]=5000&0xFF;
+	fdcan1TxData[6]=5000>>8;
+	fdcan1TxData[7]=5000&0xFF;
 	fdcan1_send_data();//demo演示了发送8字节数据
 }

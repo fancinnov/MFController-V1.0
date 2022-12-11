@@ -175,6 +175,8 @@
 #define MISSION_VEL_MAX 500.0f		//5m/s
 #define MISSION_ACCEL_MAX 100.0f	//1m/ss
 #define ALT_RETURN	1000.0f			//10m
+#define VOLTAGE_GAIN 1.0f
+#define CURRENT_GAIN 1.0f
 
 bool arm_motors(void);
 void disarm_motors(void);
@@ -735,6 +737,18 @@ typedef struct{
 		dataflash_type type=FLOAT;
 		float value=ALT_RETURN;
 	}alt_return;
+
+	struct voltage_gain{
+		uint16_t num=43;
+		dataflash_type type=FLOAT;
+		float value=VOLTAGE_GAIN;
+	}voltage_gain;
+
+	struct current_gain{
+		uint16_t num=44;
+		dataflash_type type=FLOAT;
+		float value=CURRENT_GAIN;
+	}current_gain;
 
 	/* *************************************************
 	 * ****************Dev code begin*******************/

@@ -223,6 +223,8 @@ void update_dataflash(void){
 		dataflash->set_param_float(param->mission_vel_max.num, param->mission_vel_max.value);
 		dataflash->set_param_float(param->mission_accel_max.num, param->mission_accel_max.value);
 		dataflash->set_param_float(param->alt_return.num, param->alt_return.value);
+		dataflash->set_param_float(param->voltage_gain.num, param->voltage_gain.value);
+		dataflash->set_param_float(param->current_gain.num, param->current_gain.value);
 
 		/* *************************************************
 		* ****************Dev code begin*******************/
@@ -284,6 +286,8 @@ void update_dataflash(void){
 		dataflash->get_param_float(param->mission_vel_max.num, param->mission_vel_max.value);
 		dataflash->get_param_float(param->mission_accel_max.num, param->mission_accel_max.value);
 		dataflash->get_param_float(param->alt_return.num, param->alt_return.value);
+		dataflash->get_param_float(param->voltage_gain.num, param->voltage_gain.value);
+		dataflash->get_param_float(param->current_gain.num, param->current_gain.value);
 
 		/* *************************************************
 		 * ****************Dev code begin*******************/
@@ -577,6 +581,8 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 							param->mission_vel_max.value=MISSION_VEL_MAX;
 							param->mission_accel_max.value=MISSION_ACCEL_MAX;
 							param->alt_return.value=ALT_RETURN;
+							param->voltage_gain.value=VOLTAGE_GAIN;
+							param->current_gain.value=CURRENT_GAIN;
 
 							dataflash->set_param_float(param->acro_y_expo.num, param->acro_y_expo.value);
 							dataflash->set_param_float(param->acro_yaw_p.num, param->acro_yaw_p.value);
@@ -600,6 +606,8 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 							dataflash->set_param_float(param->mission_vel_max.num, param->mission_vel_max.value);
 							dataflash->set_param_float(param->mission_accel_max.num, param->mission_accel_max.value);
 							dataflash->set_param_float(param->alt_return.num, param->alt_return.value);
+							dataflash->set_param_float(param->voltage_gain.num, param->voltage_gain.value);
+							dataflash->set_param_float(param->current_gain.num, param->current_gain.value);
 
 							dataflash->set_param_float(param->angle_roll_p.num, param->angle_roll_p.value);
 							dataflash->set_param_float(param->angle_pitch_p.num, param->angle_pitch_p.value);
@@ -979,6 +987,22 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 							command_long.command=MAV_CMD_DO_SET_PARAMETER;
 							command_long.param1=33.0f;
 							command_long.param2=param->alt_return.value;
+							mavlink_msg_command_long_encode(mavlink_system.sysid, mavlink_system.compid, &msg_command_long, &command_long);
+							mavlink_send_buffer(chan, &msg_command_long);
+						}else if(is_equal(cmd.param1,34.0f)){
+							param->voltage_gain.value=cmd.param2;
+							dataflash->set_param_float(param->voltage_gain.num, param->voltage_gain.value);
+							command_long.command=MAV_CMD_DO_SET_PARAMETER;
+							command_long.param1=34.0f;
+							command_long.param2=param->voltage_gain.value;
+							mavlink_msg_command_long_encode(mavlink_system.sysid, mavlink_system.compid, &msg_command_long, &command_long);
+							mavlink_send_buffer(chan, &msg_command_long);
+						}else if(is_equal(cmd.param1,35.0f)){
+							param->current_gain.value=cmd.param2;
+							dataflash->set_param_float(param->current_gain.num, param->current_gain.value);
+							command_long.command=MAV_CMD_DO_SET_PARAMETER;
+							command_long.param1=35.0f;
+							command_long.param2=param->current_gain.value;
 							mavlink_msg_command_long_encode(mavlink_system.sysid, mavlink_system.compid, &msg_command_long, &command_long);
 							mavlink_send_buffer(chan, &msg_command_long);
 						}
@@ -1490,6 +1514,16 @@ void send_mavlink_param_list(mavlink_channel_t chan)
 
 	command_long.param1=33.0f;
 	command_long.param2=param->alt_return.value;
+	mavlink_msg_command_long_encode(mavlink_system.sysid, mavlink_system.compid, &msg_command_long, &command_long);
+	mavlink_send_buffer(chan, &msg_command_long);
+
+	command_long.param1=34.0f;
+	command_long.param2=param->voltage_gain.value;
+	mavlink_msg_command_long_encode(mavlink_system.sysid, mavlink_system.compid, &msg_command_long, &command_long);
+	mavlink_send_buffer(chan, &msg_command_long);
+
+	command_long.param1=35.0f;
+	command_long.param2=param->current_gain.value;
 	mavlink_msg_command_long_encode(mavlink_system.sysid, mavlink_system.compid, &msg_command_long, &command_long);
 	mavlink_send_buffer(chan, &msg_command_long);
 
@@ -3142,7 +3176,7 @@ void debug(void){
 //	float cos_tilt = ahrs_cos_pitch() * ahrs_cos_roll();
 //	usb_printf("%f|%f|%f\n", pitch_deg, roll_deg, yaw_deg);
 //	usb_printf("l:%f\n",get_mag_filt().length());
-//	usb_printf("v:%f,i:%f\n",get_batt_volt(),get_batt_current());
+//	usb_printf("v:%f,i:%f\n",get_power_volt(),get_power_current());
 //	usb_printf("gx:%f|gy:%f|gz:%f\n", gyro_filt.x, gyro_filt.y, gyro_filt.z);
 //	usb_printf("mx:%f|my:%f|mz:%f\n", mag_filt.x, mag_filt.y, mag_filt.z);
 //	usb_printf("x:%f,y:%f,z:%f\n",gyro_offset.x,gyro_offset.y,gyro_offset.z);

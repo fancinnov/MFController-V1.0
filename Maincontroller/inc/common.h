@@ -221,6 +221,7 @@ void ekf_z_reset(void);
 void ekf_xy_reset(void);
 Location get_gnss_origin_pos(void); 		//获取系统启动时的初始gnss坐标
 Location get_gnss_current_pos(void);		//获取系统当前的gnss坐标
+uint8_t get_gnss_reset_notify(void);		//获取航点刷新标志
 float get_ned_pos_x(void);//cm
 float get_ned_pos_y(void);//cm
 float get_ned_pos_z(void);//cm
@@ -241,6 +242,7 @@ float get_mav_x_target(void);
 float get_mav_y_target(void);
 float get_mav_vx_target(void);
 float get_mav_vy_target(void);
+float get_mav_yaw_target(void);
 
 float get_vib_value(void);
 float get_vib_angle_z(void);

@@ -16,6 +16,7 @@ static bool execute_return=false;
 static bool execute_land=false;
 static bool reach_return_alt=false;
 static float smooth_dt=0.0f;
+static uint8_t notify=0;
 bool mode_poshold_init(void){
 	if(motors->get_armed()){//电机未锁定,禁止切换至该模式
 		Buzzer_set_ring_type(BUZZER_ERROR);
@@ -272,6 +273,10 @@ void mode_poshold(void){
 				if(gnss_point_num>0){
 					pos_control->set_speed_xy(param->mission_vel_max.value);
 					pos_control->set_accel_xy(param->mission_accel_max.value);
+					if(get_gnss_reset_notify()!=notify){
+						notify=get_gnss_reset_notify();
+						target_point=0;
+					}
 					if(target_point<gnss_point_num){
 						if(target_point==0){
 							gnss_target_pos.lat=(int32_t)(gnss_point_prt[0].x*1e7);

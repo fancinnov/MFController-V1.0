@@ -62,7 +62,7 @@ static float pitch_rad=0 , roll_rad=0 , yaw_rad=0;
 static float pitch_deg=0 , roll_deg=0 , yaw_deg=0;
 static float cos_roll=0, cos_pitch=0, cos_yaw=0, sin_roll=0, sin_pitch=0, sin_yaw=0;
 static float yaw_map=0.0f;
-static float mav_x_target=0.0f, mav_y_target=0.0f, mav_vx_target=0.0f, mav_vy_target=0.0f;
+static float mav_x_target=0.0f, mav_y_target=0.0f, mav_vx_target=0.0f, mav_vy_target=0.0f, mav_yaw_target=0.0f;
 static float completion_percent=0;
 
 static Vector3f accel, gyro, mag;								//原生加速度、角速度、磁罗盘测量值
@@ -163,6 +163,7 @@ float get_mav_x_target(void){return mav_x_target;}
 float get_mav_y_target(void){return mav_y_target;}
 float get_mav_vx_target(void){return mav_vx_target;}
 float get_mav_vy_target(void){return mav_vy_target;}
+float get_mav_yaw_target(void){return mav_yaw_target;}
 
 void reset_dataflash(void){
 	dataflash->reset_addr_num_max();
@@ -377,8 +378,14 @@ static mavlink_set_position_target_local_ned_t set_position_target_local_ned;
 static Vector3f lidar_offset=Vector3f(0.0f,0.0f, -16.0f);//cm
 static uint8_t gcs_channel=255;
 static uint16_t gnss_point_statis=0;
+static uint8_t gnss_reset_notify=0;
 static float motor_test_type=0.0f,motor_test_throttle=0.0f,motor_test_timeout=0.0f,motor_test_num=0.0f;
 static uint32_t motor_test_start_time=0;
+
+uint8_t get_gnss_reset_notify(void){
+	return gnss_reset_notify;
+}
+
 //发送
 static mavlink_system_t mavlink_system;
 static mavlink_message_t msg_global_attitude_position, msg_global_position_int, msg_command_long, msg_battery_status, msg_rc_channels, msg_mission_count, msg_mission_item, msg_system_version;
@@ -415,10 +422,11 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 			case MAVLINK_MSG_ID_SET_MODE:
 				mavlink_msg_set_mode_decode(msg_received, &setmode);
 				if(setmode.base_mode==MAV_MODE_AUTO_ARMED){
-					arm_motors();
+					unlock_motors();
 					break;
 				}else if(setmode.base_mode==MAV_MODE_AUTO_DISARMED){
 					disarm_motors();
+					lock_motors();
 					break;
 				}else if(setmode.base_mode==MAV_MODE_PREFLIGHT){
 					if(get_soft_armed()||motors->get_interlock()||motors->get_armed()){
@@ -435,6 +443,7 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 				mavlink_msg_mission_count_decode(msg_received, &mission_count);
 				send_mavlink_mission_ack(chan, MAV_MISSION_ACCEPTED);
 				gnss_point_statis=0;
+				gnss_reset_notify++;
 				break;
 			case MAVLINK_MSG_ID_MISSION_ITEM:
 				mavlink_msg_mission_item_decode(msg_received, &mission_item);
@@ -468,14 +477,21 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 				switch(cmd.command){
 					case MAV_CMD_NAV_TAKEOFF:
 						set_takeoff();
+						send_mavlink_commond_ack(chan, MAV_CMD_NAV_TAKEOFF, MAV_CMD_ACK_OK);
 						break;
 					case MAV_CMD_NAV_RETURN_TO_LAUNCH:
 						set_return(true);
+						send_mavlink_commond_ack(chan, MAV_CMD_NAV_RETURN_TO_LAUNCH, MAV_CMD_ACK_OK);
 						break;
 					case MAV_CMD_NAV_LAND:
 						if(robot_state==STATE_FLYING){
 							robot_state_desired=STATE_LANDED;
+							send_mavlink_commond_ack(chan, MAV_CMD_NAV_LAND, MAV_CMD_ACK_OK);
 						}
+						break;
+					case MAV_CMD_MISSION_START:
+						gnss_reset_notify++;
+						send_mavlink_commond_ack(chan, MAV_CMD_MISSION_START, MAV_CMD_ACK_OK);
 						break;
 					case MAV_CMD_DO_MOTOR_TEST:
 						motor_test_type=cmd.param1; 	//1.0
@@ -1101,6 +1117,7 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 				mav_y_target=-set_position_target_local_ned.y * 100.0f;  //slam 算法的map坐标系z轴向上，这里统一改为z轴向下，所以y也要变符号
 				mav_vx_target=set_position_target_local_ned.vx * 100.0f;
 				mav_vy_target=-set_position_target_local_ned.vy * 100.0f;
+				mav_yaw_target=-set_position_target_local_ned.yaw*RAD_TO_DEG;
 				break;
 			default:
 				break;
@@ -1127,6 +1144,9 @@ void send_mavlink_heartbeat_data(void){
 	}
 	if(sdlog->m_Logger_Status==SDLog::Logger_Record){
 		heartbeat_send.base_mode|=MAV_MODE_FLAG_HIL_ENABLED;
+	}
+	if(get_gps_state()){
+		heartbeat_send.base_mode|=MAV_MODE_FLAG_GUIDED_ENABLED;
 	}
 	mavlink_msg_heartbeat_encode(mavlink_system.sysid, mavlink_system.compid, &msg_heartbeat, &heartbeat_send);
 
@@ -1255,7 +1275,7 @@ void send_mavlink_data(mavlink_channel_t chan)
 	global_position_int.lon=gps_position->lon;//deg*1e7
 	global_position_int.alt=gps_position->alt;//mm
 	global_position_int.relative_alt=(int32_t)(rangefinder_state.alt_cm*10);//对地高度 mm
-	global_position_int.hdg=(uint16_t)gps_position->satellites_used|((uint16_t)gps_position->heading_status<<8);//卫星数+定向状态
+	global_position_int.hdg=(uint16_t)gps_position->satellites_used|((uint16_t)gps_position->heading_status<<8)|((uint16_t)gps_position->fix_type<<12);//卫星数+定向状态+定位状态
 	global_position_int.vx=get_vel_x(); //速度cm/s
 	global_position_int.vy=get_vel_y(); //速度cm/s
 	global_position_int.vz=get_vel_z(); //速度cm/s
@@ -2551,8 +2571,6 @@ void get_air_resistance_lean_angles(float &roll_d, float &pitch_d, float angle_m
 		roll_d *= ratio;
 		pitch_d *= ratio;
 	}
-    roll_d=constrain_float(roll_d, ahrs_roll_deg()-angle_limit, ahrs_roll_deg()+angle_limit);
-    pitch_d=constrain_float(pitch_d, ahrs_pitch_deg()-angle_limit, ahrs_pitch_deg()+angle_limit);
 }
 
 static bool _return=false;
@@ -2942,7 +2960,7 @@ void arm_motors_check(void){
 
 	// full left
 	}else if (tmp < -0.9) {
-		if (!has_manual_throttle() && !ap->land_complete) {
+		if ((!has_manual_throttle() && !ap->land_complete) || (robot_main_mode!=MODE_AIR)) {
 			arming_counter = 0;
 			return;
 		}

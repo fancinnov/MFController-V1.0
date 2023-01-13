@@ -62,7 +62,8 @@ static float pitch_rad=0 , roll_rad=0 , yaw_rad=0;
 static float pitch_deg=0 , roll_deg=0 , yaw_deg=0;
 static float cos_roll=0, cos_pitch=0, cos_yaw=0, sin_roll=0, sin_pitch=0, sin_yaw=0;
 static float yaw_map=0.0f;
-static float mav_x_target=0.0f, mav_y_target=0.0f, mav_vx_target=0.0f, mav_vy_target=0.0f, mav_yaw_target=0.0f;
+static float mav_x_target=0.0f, mav_y_target=0.0f, mav_z_target=0.0f, mav_vx_target=0.0f, mav_vy_target=0.0f, mav_vz_target=0.0f, mav_yaw_target=0.0f,
+			 mav_ax_target=0.0f, mav_ay_target=0.0f, mav_az_target=0.0f, mav_yaw_rate_target=0.0f;
 static float completion_percent=0;
 
 static Vector3f accel, gyro, mag;								//原生加速度、角速度、磁罗盘测量值
@@ -159,11 +160,18 @@ float get_odom_z(void){return odom_3d.z;}
 float get_yaw_map(void){return yaw_map;}
 bool get_gnss_location_state(void){return get_gnss_location;}
 bool get_gcs_connected(void){return gcs_connected;}
+bool get_offboard_connected(void){return offboard_connected;}
 float get_mav_x_target(void){return mav_x_target;}
 float get_mav_y_target(void){return mav_y_target;}
+float get_mav_z_target(void){return mav_z_target;}
 float get_mav_vx_target(void){return mav_vx_target;}
 float get_mav_vy_target(void){return mav_vy_target;}
+float get_mav_vz_target(void){return mav_vz_target;}
+float get_mav_ax_target(void){return mav_ax_target;}
+float get_mav_ay_target(void){return mav_ay_target;}
+float get_mav_az_target(void){return mav_az_target;}
 float get_mav_yaw_target(void){return mav_yaw_target;}
+float get_mav_yaw_rate_target(void){return mav_yaw_rate_target;}
 
 void reset_dataflash(void){
 	dataflash->reset_addr_num_max();
@@ -1115,9 +1123,15 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 				mavlink_msg_set_position_target_local_ned_decode(msg_received, &set_position_target_local_ned);
 				mav_x_target=set_position_target_local_ned.x * 100.0f;
 				mav_y_target=-set_position_target_local_ned.y * 100.0f;  //slam 算法的map坐标系z轴向上，这里统一改为z轴向下，所以y也要变符号
+				mav_z_target=-set_position_target_local_ned.z * 100.0f;  //slam 算法的map坐标系z轴向上，这里统一改为z轴向下
 				mav_vx_target=set_position_target_local_ned.vx * 100.0f;
 				mav_vy_target=-set_position_target_local_ned.vy * 100.0f;
+				mav_vz_target=-set_position_target_local_ned.vz * 100.0f;
+				mav_ax_target=set_position_target_local_ned.afx * 100.0f;
+				mav_ay_target=-set_position_target_local_ned.afy * 100.0f;
+				mav_az_target=-set_position_target_local_ned.afz * 100.0f;
 				mav_yaw_target=-set_position_target_local_ned.yaw*RAD_TO_DEG;
+				mav_yaw_rate_target=-set_position_target_local_ned.yaw_rate*RAD_TO_DEG;
 				break;
 			default:
 				break;
@@ -1587,7 +1601,7 @@ void rc_range_init(void){
 	rc_range_max[2]=(float)param->channel_range.channel[6];
 	rc_range_max[3]=(float)param->channel_range.channel[7];
 	for(uint8_t i=0;i<4;i++){
-		if(rc_range_min[i]<1000||rc_range_min[i]>1100){
+		if(rc_range_min[i]<900||rc_range_min[i]>1100){
 			rc_range_min[i]=1100;
 		}
 	}

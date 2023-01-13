@@ -22,55 +22,55 @@
 /* ****************Dev code end*********************
  * *************************************************/
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// Attitude and Position Control pid parameters // 已设实际参数用于动力较强的机型, 注释中的参数可用于动力适中的机型, 动力越强的机型PID内环越小。  //
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-#define AC_ATTITUDE_CONTROL_ANGLE_ROLL_P                      8.0f             // default angle P gain for roll 4.5f
-#define AC_ATTITUDE_CONTROL_ANGLE_PITCH_P                     8.0f             // default angle P gain for pitch 4.5f
-#define AC_ATTITUDE_CONTROL_ANGLE_YAW_P                       5.0f             // default angle P gain for yaw 4.5f
+////////////////////////////////////////////////////
+// Attitude and Position Control pid parameters ////
+////////////////////////////////////////////////////
+#define AC_ATTITUDE_CONTROL_ANGLE_ROLL_P                      4.5f
+#define AC_ATTITUDE_CONTROL_ANGLE_PITCH_P                     4.5f
+#define AC_ATTITUDE_CONTROL_ANGLE_YAW_P                       4.5f
 
 // default rate controller PID gains
 #ifndef AC_ATC_MULTI_RATE_PITCH_P
-  # define AC_ATC_MULTI_RATE_PITCH_P          0.04f //0.135
+  # define AC_ATC_MULTI_RATE_PITCH_P          0.15f
 #endif
 
 #ifndef AC_ATC_MULTI_RATE_PITCH_I
-  # define AC_ATC_MULTI_RATE_PITCH_I          0.02f //0.072
+  # define AC_ATC_MULTI_RATE_PITCH_I          0.3f
 #endif
 
 #ifndef AC_ATC_MULTI_RATE_PITCH_D
-  # define AC_ATC_MULTI_RATE_PITCH_D          0.001f //0.0036
+  # define AC_ATC_MULTI_RATE_PITCH_D          0.004f
 #endif
 
 #ifndef AC_ATC_MULTI_RATE_ROLL_P
-  # define AC_ATC_MULTI_RATE_ROLL_P           0.04f//0.135
+  # define AC_ATC_MULTI_RATE_ROLL_P           0.4f
 #endif
 
 #ifndef AC_ATC_MULTI_RATE_ROLL_I
-  # define AC_ATC_MULTI_RATE_ROLL_I           0.02f //0.072
+  # define AC_ATC_MULTI_RATE_ROLL_I           0.4f
 #endif
 
 #ifndef AC_ATC_MULTI_RATE_ROLL_D
-  # define AC_ATC_MULTI_RATE_ROLL_D           0.001f//0.0036
+  # define AC_ATC_MULTI_RATE_ROLL_D           0.004f
 #endif
 
 #ifndef AC_ATC_MULTI_RATE_RP_IMAX
- # define AC_ATC_MULTI_RATE_RP_IMAX         0.3f  //0.5
+ # define AC_ATC_MULTI_RATE_RP_IMAX         0.3f
 #endif
 #ifndef AC_ATC_MULTI_RATE_RP_FILT_HZ
  # define AC_ATC_MULTI_RATE_RP_FILT_HZ      20.0f
 #endif
 #ifndef AC_ATC_MULTI_RATE_YAW_P
- # define AC_ATC_MULTI_RATE_YAW_P           0.16f //0.2
+ # define AC_ATC_MULTI_RATE_YAW_P           1.0f
 #endif
 #ifndef AC_ATC_MULTI_RATE_YAW_I
- # define AC_ATC_MULTI_RATE_YAW_I           0.016f //0.02
+ # define AC_ATC_MULTI_RATE_YAW_I           0.1f
 #endif
 #ifndef AC_ATC_MULTI_RATE_YAW_D
- # define AC_ATC_MULTI_RATE_YAW_D           0.0f //0.125
+ # define AC_ATC_MULTI_RATE_YAW_D           0.0f
 #endif
 #ifndef AC_ATC_MULTI_RATE_YAW_IMAX
- # define AC_ATC_MULTI_RATE_YAW_IMAX        0.3f //0.5
+ # define AC_ATC_MULTI_RATE_YAW_IMAX        0.3f
 #endif
 #ifndef AC_ATC_MULTI_RATE_YAW_FILT_HZ
  # define AC_ATC_MULTI_RATE_YAW_FILT_HZ     2.5f
@@ -85,11 +85,11 @@
 #define POSCONTROL_ACC_Z_IMAX                 500     // vertical acceleration controller IMAX gain default
 #define POSCONTROL_ACC_Z_FILT_HZ              20.0f   // vertical acceleration controller input filter default
 #define POSCONTROL_ACC_Z_DT                   0.0025f // vertical acceleration controller dt default
-#define POSCONTROL_POS_XY_P                   0.8f    // horizontal position controller P gain default 1.0
-#define POSCONTROL_VEL_XY_P                   0.4f    // horizontal velocity controller P gain default 2.0
-#define POSCONTROL_VEL_XY_I                   0.2f    // horizontal velocity controller I gain default 1.0
-#define POSCONTROL_VEL_XY_D                   0.1f    // horizontal velocity controller D gain default 0.5
-#define POSCONTROL_VEL_XY_IMAX                50.0f  // horizontal velocity controller IMAX gain default 200
+#define POSCONTROL_POS_XY_P                   1.0f    // horizontal position controller P gain default 1.0
+#define POSCONTROL_VEL_XY_P                   1.5f    // horizontal velocity controller P gain default 2.0
+#define POSCONTROL_VEL_XY_I                   0.5f    // horizontal velocity controller I gain default 1.0
+#define POSCONTROL_VEL_XY_D                   0.5f    // horizontal velocity controller D gain default 0.5
+#define POSCONTROL_VEL_XY_IMAX                500.0f  // horizontal velocity controller IMAX gain default 200
 #define POSCONTROL_VEL_XY_FILT_HZ             5.0f    // horizontal velocity controller input filter default 5.0
 #define POSCONTROL_VEL_XY_FILT_D_HZ           5.0f    // horizontal velocity controller input filter for D default 5.0
 
@@ -108,7 +108,7 @@
 #endif
 // default maximum vertical velocity and acceleration the pilot may request
 #ifndef PILOT_VELZ_UP_MAX
- # define PILOT_VELZ_UP_MAX              100.0f         // maximum vertical velocity up in cm/s
+ # define PILOT_VELZ_UP_MAX              150.0f         // maximum vertical velocity up in cm/s
 #endif
 #ifndef PILOT_VELZ_DOWN_MAX
  # define PILOT_VELZ_DOWN_MAX              50.0f         // maximum vertical velocity down in cm/s
@@ -117,7 +117,7 @@
  # define AUTO_LAND_SPEED              30.0f         // maximum vertical velocity down in cm/s
 #endif
 #ifndef PILOT_ACCEL_Z_DEFAULT
- # define PILOT_ACCEL_Z_DEFAULT       100.0f         // vertical acceleration in cm/s/s while altitude is under pilot control
+ # define PILOT_ACCEL_Z_DEFAULT       250.0f         // vertical acceleration in cm/s/s while altitude is under pilot control
 #endif
 
 #ifndef RANGEFINDER_GAIN_DEFAULT
@@ -158,7 +158,7 @@
 
 #define GYRO_INIT_MAX_DIFF_DPS 0.1f
 
-#define THR_HOVER_UPDATE_MIN 0.2f
+#define THR_HOVER_UPDATE_MIN 0.4f
 #define THR_HOVER_UPDATE_MAX 0.7f
 
 // spool definition
@@ -240,13 +240,20 @@ float get_vel_z(void);//cm/s
 
 float get_mav_x_target(void);
 float get_mav_y_target(void);
+float get_mav_z_target(void);
 float get_mav_vx_target(void);
 float get_mav_vy_target(void);
+float get_mav_vz_target(void);
+float get_mav_ax_target(void);
+float get_mav_ay_target(void);
+float get_mav_az_target(void);
 float get_mav_yaw_target(void);
+float get_mav_yaw_rate_target(void);
 
 float get_vib_value(void);
 float get_vib_angle_z(void);
 bool get_gcs_connected(void);
+bool get_offboard_connected(void);
 bool get_gnss_location_state(void);
 bool has_manual_throttle(void);
 void set_manual_throttle(bool manual_throttle);

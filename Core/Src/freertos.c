@@ -324,8 +324,7 @@ void Loop400hzTask(void *argument)
 	  ahrs_update();
 	  ekf_baro_alt();
 	  /***Do not change code above and change or add new code below***/
-//	  ekf_rf_alt();
-//	  ekf_odom_xy();
+	  ekf_odom_xy();
 	  ekf_gnss_xy();
 	  mode_update();
 	  send_sub_data();

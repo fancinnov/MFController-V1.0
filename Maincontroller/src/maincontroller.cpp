@@ -50,6 +50,7 @@ static bool use_uwb_pos_z=false;
 static bool rc_channels_sendback=false;
 static bool gcs_connected=false;
 static bool offboard_connected=false;
+static bool offboard_enable=false;
 
 static float accel_filt_hz=20;//HZ
 static float gyro_filt_hz=20;//HZ
@@ -172,6 +173,7 @@ float get_mav_ay_target(void){return mav_ay_target;}
 float get_mav_az_target(void){return mav_az_target;}
 float get_mav_yaw_target(void){return mav_yaw_target;}
 float get_mav_yaw_rate_target(void){return mav_yaw_rate_target;}
+void set_offboard(bool enable){offboard_enable=enable;}
 
 void reset_dataflash(void){
 	dataflash->reset_addr_num_max();
@@ -1949,7 +1951,9 @@ void update_mag_data(void){
 		initial_mag=true;
 	}else{
 		mag_filt = _mag_filter.apply(mag_correct);
-		mag_corrected=true;
+		if(!offboard_enable){
+			mag_corrected=true;
+		}
 	}
 }
 
@@ -2133,6 +2137,11 @@ static RTC_DateTypeDef sDate;
 static float yaw_gnss_offset=0.0f;
 static uint8_t yaw_gnss_flag=0;
 void gnss_update(void){
+	if(offboard_enable){
+		initial_gnss=false;
+		ahrs->set_declination(0.0f);
+		return;
+	}
 	if(get_gps_state()){
 		if(!initial_gnss){
 			gnss_origin_pos.lat=gps_position->lat;//纬度:deg*1e-7
@@ -2168,8 +2177,6 @@ void gnss_update(void){
 		ned_current_vel.x=gps_position->vel_n_m_s*100;//cm
 		ned_current_vel.y=gps_position->vel_e_m_s*100;//cm
 		ned_current_vel.z=gps_position->vel_d_m_s*100;//cm
-	}else{
-		initial_gnss=false;
 	}
 }
 
@@ -2208,7 +2215,7 @@ void uwb_position_update(void){
 }
 
 void ekf_odom_xy(void){
-	if(!ahrs->is_initialed()||(!ahrs_healthy)){
+	if(!ahrs->is_initialed()||(!ahrs_healthy)||(!offboard_enable)){
 		return;
 	}
 	if(odom_3d.x==0&&odom_3d.y==0){
@@ -2218,17 +2225,23 @@ void ekf_odom_xy(void){
 }
 
 void ekf_gnss_xy(void){
-	if(!ahrs->is_initialed()||(!ahrs_healthy)||!get_gps_state()){
+	if(!ahrs->is_initialed()||(!ahrs_healthy)||!get_gps_state()||offboard_enable){
 		return;
 	}
 	ekf_gnss->update(get_gnss_location,get_ned_pos_x(),get_ned_pos_y(),get_ned_vel_x(),get_ned_vel_y());
 }
 
 float get_pos_x(void){//cm
+	if(offboard_enable){
+		return ekf_odometry->pos_x;
+	}
 	return ekf_gnss->pos_x;
 }
 
 float get_pos_y(void){//cm
+	if(offboard_enable){
+		return ekf_odometry->pos_y;
+	}
 	return ekf_gnss->pos_y;
 }
 
@@ -2237,10 +2250,16 @@ float get_pos_z(void){//cm
 }
 
 float get_vel_x(void){//cm/s
+	if(offboard_enable){
+		return ekf_odometry->vel_x;
+	}
 	return ekf_gnss->vel_x;
 }
 
 float get_vel_y(void){//cm/s
+	if(offboard_enable){
+		return ekf_odometry->vel_y;
+	}
 	return ekf_gnss->vel_y;
 }
 

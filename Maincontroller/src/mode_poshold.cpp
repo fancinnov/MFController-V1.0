@@ -27,6 +27,7 @@ bool mode_poshold_init(void){
 		pos_control->set_alt_target_to_current_alt();
 		pos_control->set_desired_velocity_z(get_vel_z());
 	}
+	set_offboard(false);//禁用外部模式
 	set_manual_throttle(false);//设置为自动油门
 	Buzzer_set_ring_type(BUZZER_MODE_SWITCH);
 	usb_printf("switch mode poshold!\n");

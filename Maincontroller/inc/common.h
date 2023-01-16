@@ -257,6 +257,7 @@ bool get_offboard_connected(void);
 bool get_gnss_location_state(void);
 bool has_manual_throttle(void);
 void set_manual_throttle(bool manual_throttle);
+void set_offboard(bool enable);
 
 float get_channel_roll_angle(void);
 float get_channel_pitch_angle(void);

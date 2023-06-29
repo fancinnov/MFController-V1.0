@@ -345,6 +345,16 @@ typedef struct {
 } Rangefinder_state;
 extern Rangefinder_state rangefinder_state;
 
+typedef struct {
+	bool healthy;
+	float flow_dt;
+	LowPassFilterVector2f vel_filter;
+	Vector2f rads;
+	Vector2f vel;
+	Vector2f pos;
+} Opticalflow_state;
+extern Opticalflow_state opticalflow_state;
+
 typedef enum{
 	none=0,
 	tag=1,

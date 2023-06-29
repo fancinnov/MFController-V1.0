@@ -139,6 +139,16 @@ typedef struct {
 	float baro_alt; 			//m
 } SPL06_Data;
 
+typedef struct
+{
+    int16_t	 flow_x_integral;
+    int16_t	 flow_y_integral;
+    uint16_t integration_timespan;
+    uint16_t ground_distance;
+    uint8_t  quality;
+    uint8_t  version;
+}LC302_Data;
+
 typedef struct {
 	uint16_t motor[8];  // ESC:1000~2000; BRUSH:0~2500
 	uint16_t servo[8];  // SERVO:500~2500
@@ -179,6 +189,7 @@ extern QMI8658_Data qmi8658_data;
 extern ADIS16470_Data adis16470_data;
 extern QMC5883_Data qmc5883_data;
 extern SPL06_Data spl06_data1,spl06_data2;
+extern LC302_Data lc302_data;
 extern PWM_Channel pwm_channel;
 
 /****************c/c++ interface*******************************/
@@ -200,6 +211,7 @@ void ekf_odom_xy(void);
 void ekf_gnss_xy(void);
 void throttle_loop(void);
 void get_tfmini_data(uint8_t buf);
+void opticalflow_update(void);
 void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t* msg_received, mavlink_status_t* status);
 void send_mavlink_data(mavlink_channel_t chan);
 void send_mavlink_param_list(mavlink_channel_t chan);
@@ -352,6 +364,9 @@ HAL_FDCAN_StateTypeDef get_fdcan2_state(void);//获取fdcan状态
 void Baro_set_press_offset(float vel, float k_gain);// vel:m/s
 void Baro1_update_data();
 void Baro2_update_data();
+
+//光流驱动
+uint8_t get_lc302_data(uint8_t buf);//解析成功返回0,未解析完返回1,解析失败返回2
 
 /***fram驱动函数为底层驱动，它的上层函数在Cpplibrary中的flash.h***/
 void FRAM_Init(void);//FRAM 初始化

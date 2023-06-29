@@ -53,6 +53,7 @@
 #define MAV_COMM  	0x02 //Mavlink模式
 #define GPS_COMM  	0x03 //GPS模式
 #define TFMINI_COMM 0X04 //TFmini激光测距仪
+#define LC302_COMM 	0X05 //光流模式
 
 //WIFI类型
 #define MLINK_MASK  0xF0 //wifi类型掩码
@@ -71,6 +72,9 @@
 
 //配置UWB
 #define USE_UWB 0 // if use uwb, set 1; if don't use uwb, set 0;
+
+//配置光流
+#define USE_FLOW 1 // if use optical flow, set 1; if don't use optical flow, set 0;
 
 //配置flash
 #define USE_FRAM 1 //保持默认值,请勿更改

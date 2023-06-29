@@ -79,9 +79,9 @@ void mode_update(void){
 				}
 			}
 		}else if(ch6>0.3){
-			if(robot_sub_mode!=MODE_ALTHOLD){
-				if(mode_althold_init()){
-					robot_sub_mode=MODE_ALTHOLD;
+			if(robot_sub_mode!=MODE_AUTONAV){
+				if(mode_autonav_init()){
+					robot_sub_mode=MODE_AUTONAV;
 				}
 			}
 		}else{

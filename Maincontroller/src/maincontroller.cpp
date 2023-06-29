@@ -43,6 +43,7 @@ static bool ahrs_healthy=false;
 static bool initial_compass_cal=false;
 static bool initial_gnss=false;
 static bool get_gnss_location=false;
+static bool get_opticalflow=false;
 static bool get_rangefinder_data=false;
 static bool get_mav_yaw=false, get_odom_xy=false;
 static bool mag_corrected=false, mag_correcting=false;
@@ -59,6 +60,7 @@ static float baro_filt_hz=2;//HZ
 static float accel_ef_filt_hz=10;//HZ
 static float uwb_pos_filt_hz=5;//HZ
 static float rangefinder_filt_hz=20;//HZ
+static float opticalflow_filt_hz=5;//HZ
 static float pitch_rad=0 , roll_rad=0 , yaw_rad=0;
 static float pitch_deg=0 , roll_deg=0 , yaw_deg=0;
 static float cos_roll=0, cos_pitch=0, cos_yaw=0, sin_roll=0, sin_pitch=0, sin_yaw=0;
@@ -78,7 +80,7 @@ static Vector3f ned_current_pos, ned_current_vel;
 static Matrix3f dcm_matrix, dcm_matrix_correct;										//旋转矩阵
 static LowPassFilter2pVector3f	_accel_filter, _gyro_filter, _accel_ef_filter;
 static LowPassFilterFloat _baro_alt_filter;
-static LowPassFilterVector3f _mag_filter, _uwb_pos_filter;
+static LowPassFilterVector3f _mag_filter, _uwb_pos_filter, _flow_gyro_filter;
 static LowPassFilterVector2f _odom_vel_filter, _odom_pos_filter, _air_resistance_filter;
 
 parameter *param=new parameter();
@@ -97,6 +99,7 @@ DataFlash *dataflash=new DataFlash();
 SDLog *sdlog=new SDLog();
 UWB *uwb=new UWB();
 Rangefinder_state rangefinder_state;
+Opticalflow_state opticalflow_state;
 
 float ahrs_pitch_rad(void){return pitch_rad;}
 float ahrs_roll_rad(void){return roll_rad;}
@@ -371,6 +374,52 @@ void get_tfmini_data(uint8_t buf)
 			}
 			break;
 	}
+}
+
+static float flow_alt, flow_bf_x, flow_bf_y;
+static Vector3f flow_gyro_offset;
+static Vector2f flow_rad_last, flow_rad_delta;
+static float flow_gain_x=-0.022, flow_gain_y=0.022, flow_gain_z=0.001;
+void opticalflow_update(void){
+#if USE_FLOW
+	if(rangefinder_state.alt_healthy){
+		flow_alt=constrain_float(rangefinder_state.alt_cm, 0.0f, 100.0f);
+	}else{
+		flow_alt=50.0f;//cm
+	}
+	if(lc302_data.quality==245){
+		opticalflow_state.healthy=true;
+		get_opticalflow=true;
+	}else{
+		opticalflow_state.healthy=false;
+		return;
+	}
+	//光流坐标系->机体坐标系//TODO:add gyro offset
+	flow_bf_x=(float)lc302_data.flow_y_integral*0.0001f+constrain_float(flow_gyro_offset.y*flow_gain_x, -0.2, 0.2);
+	flow_bf_y=-(float)lc302_data.flow_x_integral*0.0001f+constrain_float(flow_gyro_offset.x*flow_gain_y, -0.2, 0.2)+constrain_float(flow_gain_z*flow_gyro_offset.z, -0.01, 0.01);
+	//机体坐标系->大地坐标系
+	opticalflow_state.rads.x=flow_bf_x*ahrs_cos_yaw()-flow_bf_y*ahrs_sin_yaw();
+	opticalflow_state.rads.y=flow_bf_x*ahrs_sin_yaw()+flow_bf_y*ahrs_cos_yaw();
+	flow_rad_delta=opticalflow_state.rads-flow_rad_last;
+	if(flow_rad_delta.length()>0.005){
+		opticalflow_state.rads=flow_rad_last+flow_rad_delta.normalized()*0.005;
+	}
+	flow_rad_last=opticalflow_state.rads;
+	opticalflow_state.flow_dt=(float)lc302_data.integration_timespan*0.000001f;
+	opticalflow_state.vel=opticalflow_state.vel_filter.apply(opticalflow_state.rads*flow_alt/opticalflow_state.flow_dt);
+	opticalflow_state.pos+=opticalflow_state.vel*opticalflow_state.flow_dt;
+	if(rangefinder_state.alt_healthy&&flow_alt<500){
+		get_gnss_location=true;
+		ned_current_vel.x=opticalflow_state.vel.x;
+		ned_current_vel.y=opticalflow_state.vel.y;
+		ned_current_pos.x+=opticalflow_state.vel.x*opticalflow_state.flow_dt;
+		ned_current_pos.y+=opticalflow_state.vel.y*opticalflow_state.flow_dt;
+		get_odom_xy=true;
+		odom_3d.x+=opticalflow_state.vel.x*opticalflow_state.flow_dt;
+		odom_3d.y+=opticalflow_state.vel.y*opticalflow_state.flow_dt;
+	}
+//	usb_printf("p:%f|%f,v:%f|%f\n",opticalflow_state.pos.x, opticalflow_state.pos.y, opticalflow_state.vel.x, opticalflow_state.vel.y);
+#endif
 }
 
 //接收
@@ -1109,31 +1158,35 @@ void parse_mavlink_data(mavlink_channel_t chan, uint8_t data, mavlink_message_t*
 				break;
 			case MAVLINK_MSG_ID_ATTITUDE:   // MAV ID: 30
 				mavlink_msg_attitude_decode(msg_received, &attitude_mav);
-				yaw_map=wrap_PI(-attitude_mav.yaw);  //slam 算法的map坐标系z轴向上，这里统一改为z轴向下, 所以需要加负号
+				yaw_map=wrap_PI(attitude_mav.yaw);  //rad 外部传入的偏航角必须z轴向下的弧度角,即NED或FRD坐标系
 				time_last_attitude=HAL_GetTick();
-				get_mav_yaw=true;
+				if(offboard_enable&&!USE_MAG){
+					get_mav_yaw=true;
+				}
 				break;
 			case MAVLINK_MSG_ID_LOCAL_POSITION_NED_COV:       // MAV ID: 64
 				mavlink_msg_local_position_ned_cov_decode(msg_received, &local_position_ned_cov);
 				odom_offset=dcm_matrix*lidar_offset;
-				odom_3d.x=local_position_ned_cov.x * 100.0f-odom_offset.x;  //cm
-				odom_3d.y=-local_position_ned_cov.y * 100.0f-odom_offset.y;  //cm ，slam 算法的map坐标系z轴向上，这里统一改为z轴向下，所以y也要变符号；
-				odom_3d.z=local_position_ned_cov.z * 100.0f; //cm, 虽然slam 算法的map坐标系z轴向上，但是EKF做了匹配，需要得到z轴向上的值；
-				get_odom_xy=true;
+				odom_3d.x=local_position_ned_cov.x * 100.0f-odom_offset.x;  //cm 外部定位必须是NED或者FRD坐标系,如果是FRD坐标还需要禁用磁罗盘。
+				odom_3d.y=local_position_ned_cov.y * 100.0f-odom_offset.y;  //cm
+				odom_3d.z=-local_position_ned_cov.z * 100.0f; //cm
+				if(offboard_enable){
+					get_odom_xy=true;
+				}
 				break;
 			case MAVLINK_MSG_ID_SET_POSITION_TARGET_LOCAL_NED:     // MAV ID: 84
 				mavlink_msg_set_position_target_local_ned_decode(msg_received, &set_position_target_local_ned);
-				mav_x_target=set_position_target_local_ned.x * 100.0f;
-				mav_y_target=-set_position_target_local_ned.y * 100.0f;  //slam 算法的map坐标系z轴向上，这里统一改为z轴向下，所以y也要变符号
-				mav_z_target=-set_position_target_local_ned.z * 100.0f;  //slam 算法的map坐标系z轴向上，这里统一改为z轴向下
+				mav_x_target=set_position_target_local_ned.x * 100.0f;//接收的外部目标必须是NED或者FRD坐标系,单位是m,先转为cm
+				mav_y_target=set_position_target_local_ned.y * 100.0f;
+				mav_z_target=set_position_target_local_ned.z * 100.0f;
 				mav_vx_target=set_position_target_local_ned.vx * 100.0f;
-				mav_vy_target=-set_position_target_local_ned.vy * 100.0f;
-				mav_vz_target=-set_position_target_local_ned.vz * 100.0f;
+				mav_vy_target=set_position_target_local_ned.vy * 100.0f;
+				mav_vz_target=set_position_target_local_ned.vz * 100.0f;
 				mav_ax_target=set_position_target_local_ned.afx * 100.0f;
-				mav_ay_target=-set_position_target_local_ned.afy * 100.0f;
-				mav_az_target=-set_position_target_local_ned.afz * 100.0f;
-				mav_yaw_target=-set_position_target_local_ned.yaw*RAD_TO_DEG;
-				mav_yaw_rate_target=-set_position_target_local_ned.yaw_rate*RAD_TO_DEG;
+				mav_ay_target=set_position_target_local_ned.afy * 100.0f;
+				mav_az_target=set_position_target_local_ned.afz * 100.0f;
+				mav_yaw_target=set_position_target_local_ned.yaw*RAD_TO_DEG;
+				mav_yaw_rate_target=set_position_target_local_ned.yaw_rate*RAD_TO_DEG;
 				break;
 			default:
 				break;
@@ -1581,14 +1634,16 @@ void send_mavlink_param_list(mavlink_channel_t chan)
 }
 
 void ekf_z_reset(void){
-	ekf_rangefinder->reset();
 	ekf_baro->reset();
+	ekf_baro_alt();
 	pos_control->set_alt_target_to_current_alt();
 }
 
 void ekf_xy_reset(void){
 	ekf_odometry->reset();
+	ekf_odom_xy();
 	ekf_gnss->reset();
+	ekf_gnss_xy();
 	pos_control->set_xy_target(get_pos_x(), get_pos_y());
 }
 
@@ -1693,6 +1748,7 @@ void pos_init(void){
 	pos_control->set_lean_angle_max_d(param->angle_max.value);
 	sdlog->Logger_Read_Gnss();
 	rangefinder_state.alt_cm_filt.set_cutoff_frequency(100, rangefinder_filt_hz);//tfmini默认频率100hz
+	opticalflow_state.vel_filter.set_cutoff_frequency(50, opticalflow_filt_hz);//光流默认频率50hz
 	_air_resistance_filter.set_cutoff_frequency(400, 1);
 }
 
@@ -1765,12 +1821,14 @@ void update_accel_gyro_data(void){
 			_accel_filter.set_cutoff_frequency(400, accel_filt_hz);
 			_gyro_filter.set_cutoff_frequency(400, gyro_filt_hz);
 			_accel_ef_filter.set_cutoff_frequency(400, accel_ef_filt_hz);
+			_flow_gyro_filter.set_cutoff_frequency(400, opticalflow_filt_hz);
 			ahrs_stage_compass=true;
 		}
 	}else{
 		if(accel_correct.length()<50){//过滤奇异值
 			accel_filt=_accel_filter.apply(accel_correct);
 			gyro_filt=_gyro_filter.apply(gyro_correct);
+			flow_gyro_offset=_flow_gyro_filter.apply(gyro_filt);
 		}
 	}
 }
@@ -2033,11 +2091,8 @@ void ahrs_update(void){
 	}
 }
 
-static float baro_alt_filt=0,baro_alt_init=0,baro_alt_last=0,baro_alt_correct=0,gnss_alt_last=0;
-static float rf_alt_delta=0, rf_alt_last=0, gnss_alt_delta=0,baro_alt_delta=0,vel_2d=0,accel_2d=0;
+static float baro_alt_filt=0,baro_alt_init=0,baro_alt_correct=0;
 static uint16_t init_baro=0;
-static float K_gain=0.0f;
-static bool rf_correct=false;
 void update_baro_alt(void){
 	if(init_baro<20){//前20点不要
 		init_baro++;
@@ -2060,51 +2115,7 @@ void update_baro_alt(void){
 		initial_baro=true;
 	}else{
 		baro_alt-=baro_alt_init;
-		if(get_gps_state()){
-			if(is_equal(K_gain, 0.0f)){
-				K_gain=constrain_float((float)gps_position->satellites_used/30, 0.0f, 1.0f);
-				gnss_alt_last=ned_current_pos.z;
-				gnss_alt_delta=0;
-			}else{
-				K_gain=constrain_float((float)gps_position->satellites_used/30, 0.0f, 1.0f);
-				gnss_alt_delta=ned_current_pos.z-gnss_alt_last;
-				gnss_alt_last=ned_current_pos.z;
-				if(is_equal(gnss_alt_delta, 0.0f)){
-					K_gain=0.0f;
-				}
-			}
-			vel_2d=sqrtf(sq(get_vel_x(),get_vel_y()));
-		}else{
-			K_gain=0.0f;
-			vel_2d=0.0f;
-		}
-		if(rangefinder_state.alt_healthy){
-			rf_alt_delta=rangefinder_state.alt_cm-rf_alt_last;
-			rf_alt_last=rangefinder_state.alt_cm;
-			if(abs(rf_alt_delta)<100.0f&&!is_equal(rf_alt_delta,0.0f)){
-				rf_correct=true;
-			}else{
-				rf_correct=false;
-			}
-		}else{
-			rf_correct=false;
-		}
-		baro_alt_delta=baro_alt-baro_alt_last;
-		baro_alt_last=baro_alt;
-		accel_2d=sqrtf(sq(get_accel_ef().x,get_accel_ef().y));
-		if(rf_correct&&(baro_alt_delta*rf_alt_delta<0||abs(baro_alt_delta)>15.0f||accel_2d>1.0f)){//防止水平飞行掉高和大风扰动
-			baro_alt_delta=rf_alt_delta;
-		}else if(K_gain>0.2f&&(abs(baro_alt_delta)>15.0f||accel_2d>1.0f)&&abs(gnss_alt_delta)<100.0f){//防止水平飞行掉高和大风扰动
-			baro_alt_delta=gnss_alt_delta;
-		}else{
-			if(vel_2d<100&&accel_2d<1.0f){
-				baro_alt_delta=baro_alt-baro_alt_correct;
-			}
-			if(abs(get_vel_z())<100.0f){
-				baro_alt_delta=constrain_float(baro_alt_delta, -15.0f, 15.0f);
-			}
-		}
-		baro_alt_correct+=baro_alt_delta;
+		ekf_baro->fusion(baro_alt, baro_alt_correct);
 		baro_alt_filt = _baro_alt_filter.apply(baro_alt_correct);
 		get_baro_alt_filt=true;
 	}
@@ -2225,7 +2236,7 @@ void ekf_odom_xy(void){
 }
 
 void ekf_gnss_xy(void){
-	if(!ahrs->is_initialed()||(!ahrs_healthy)||!get_gps_state()||offboard_enable){
+	if(!ahrs->is_initialed()||(!ahrs_healthy)||(!get_gps_state()&&!get_opticalflow)||offboard_enable){
 		return;
 	}
 	ekf_gnss->update(get_gnss_location,get_ned_pos_x(),get_ned_pos_y(),get_ned_vel_x(),get_ned_vel_y());
@@ -2445,6 +2456,12 @@ float get_non_takeoff_throttle(void)
 //      returns climb rate (in cm/s) which should be passed to the position controller
 // if use this function, we should set rangefinder_state.alt_healthy=true;
 static float target_rangefinder_alt=0.0f;   // desired altitude in cm above the ground
+static bool hit_target_rangefinder_alt=false;
+static uint32_t hit_time_ms = 0;
+void set_target_rangefinder_alt(float alt_target){
+	target_rangefinder_alt=alt_target;
+	hit_target_rangefinder_alt=false;
+}
 float get_surface_tracking_climb_rate(float target_rate, float current_alt_target, float dt)
 {
 	if(!rangefinder_state.alt_healthy){
@@ -2466,8 +2483,11 @@ float get_surface_tracking_climb_rate(float target_rate, float current_alt_targe
 
     // reset target altitude if this controller has just been engaged
     if (now - last_call_ms > RANGEFINDER_TIMEOUT_MS) {
-    	target_rangefinder_alt = rangefinder_state.alt_cm + current_alt_target - current_alt;
-    }
+    	if(robot_sub_mode!=MODE_AUTONAV){
+    		target_rangefinder_alt = rangefinder_state.alt_cm + current_alt_target - current_alt;
+    	}
+		hit_target_rangefinder_alt=false;
+	}
     last_call_ms = now;
 
     // adjust rangefinder target alt if motors have not hit their limits
@@ -2484,12 +2504,22 @@ float get_surface_tracking_climb_rate(float target_rate, float current_alt_targe
       reading
      */
     float glitch_cm = rangefinder_state.alt_cm - target_rangefinder_alt;
-    if (glitch_cm >= RANGEFINDER_GLITCH_ALT_CM) {
-        rangefinder_state.glitch_count = MAX(rangefinder_state.glitch_count+1,1);
-    } else if (glitch_cm <= -RANGEFINDER_GLITCH_ALT_CM) {
-        rangefinder_state.glitch_count = MIN(rangefinder_state.glitch_count-1,-1);
-    } else {
-        rangefinder_state.glitch_count = 0;
+    if(target_rangefinder_alt>20.0f){
+    	if(abs(glitch_cm)<10.0f){
+    		hit_target_rangefinder_alt=true;
+    		hit_time_ms=now;
+    	}
+    }
+    if(!hit_target_rangefinder_alt||(now-hit_time_ms)<2000){
+    	rangefinder_state.glitch_count = 0;
+    }else{
+    	if (glitch_cm >= RANGEFINDER_GLITCH_ALT_CM) {
+			rangefinder_state.glitch_count = MAX(rangefinder_state.glitch_count+1,1);
+		} else if (glitch_cm <= -RANGEFINDER_GLITCH_ALT_CM) {
+			rangefinder_state.glitch_count = MIN(rangefinder_state.glitch_count-1,-1);
+		} else {
+			rangefinder_state.glitch_count = 0;
+		}
     }
     if (abs(rangefinder_state.glitch_count) >= RANGEFINDER_GLITCH_NUM_SAMPLES) {
         // shift to the new rangefinder reading
@@ -2856,7 +2886,7 @@ static void update_land_detector(void)
 {
 	ahrs->check_vibration();
 	//******************落地前********************
-	if((pos_control->get_desired_velocity().z<0)&&(get_vib_value()>param->vib_land.value)&&(motors->get_throttle()<motors->get_throttle_hover())&&(!motors->limit.throttle_lower)){//TODO:降落时防止弹起来
+	if((get_vel_z()<0)&&(pos_control->get_desired_velocity().z<0)&&(get_vib_value()>param->vib_land.value)&&(motors->get_throttle()<motors->get_throttle_hover())&&(!motors->limit.throttle_lower)){//TODO:降落时防止弹起来
 		disarm_motors();
 	}
 	//******************落地后ls*********************
@@ -3142,7 +3172,7 @@ void Logger_Data_Callback(void){
 			attitude->rate_bf_targets().x, attitude->rate_bf_targets().y, attitude->rate_bf_targets().z, get_accel_ef().x, get_accel_ef().y, get_accel_ef().z, get_vib_value(), get_vib_angle_z());
 	osDelay(1);
 	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_POS_Z
-			get_baroalt_filt(), pos_control->get_pos_target().z, get_pos_z(), pos_control->get_vel_target_z(), get_vel_z(), get_rangefinder_alt(), get_rangefinder_alt_target(), get_ned_pos_z(), get_ned_vel_z());
+			get_baroalt_filt(), pos_control->get_pos_target().z, get_pos_z(), pos_control->get_vel_target_z(), get_vel_z(), get_rangefinder_alt(), get_rangefinder_alt_target(), -get_ned_pos_z(), -get_ned_vel_z());
 	osDelay(1);
 	sd_log_write("%8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f %8.3f ",//LOG_POS_XY
 			ekf_baro->get_vt(), get_odom_x(), get_ned_pos_x(), get_pos_x(), get_vel_x(), get_odom_y(), get_ned_pos_y(), get_pos_y(), get_vel_y());

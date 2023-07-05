@@ -47,7 +47,6 @@ static bool get_opticalflow=false;
 static bool get_rangefinder_data=false;
 static bool get_mav_yaw=false, get_odom_xy=false;
 static bool mag_corrected=false, mag_correcting=false;
-static bool use_uwb_pos_z=false;
 static bool rc_channels_sendback=false;
 static bool gcs_connected=false;
 static bool offboard_connected=false;
@@ -68,6 +67,7 @@ static float yaw_map=0.0f;
 static float mav_x_target=0.0f, mav_y_target=0.0f, mav_z_target=0.0f, mav_vx_target=0.0f, mav_vy_target=0.0f, mav_vz_target=0.0f, mav_yaw_target=0.0f,
 			 mav_ax_target=0.0f, mav_ay_target=0.0f, mav_az_target=0.0f, mav_yaw_rate_target=0.0f;
 static float completion_percent=0;
+static float takeoff_alt=0.0f;
 
 static Vector3f accel, gyro, mag;								//原生加速度、角速度、磁罗盘测量值
 static Vector3f accel_correct, gyro_correct, mag_correct;		//修正后的加速度、角速度、磁罗盘测量值
@@ -383,10 +383,11 @@ static float flow_gain_x=-0.022, flow_gain_y=0.022, flow_gain_z=0.001;
 void opticalflow_update(void){
 #if USE_FLOW
 	if(rangefinder_state.alt_healthy){
-		flow_alt=constrain_float(rangefinder_state.alt_cm, 0.0f, 100.0f);
+		flow_alt=rangefinder_state.alt_cm;
 	}else{
-		flow_alt=50.0f;//cm
+		flow_alt=get_pos_z()-takeoff_alt;//cm
 	}
+	flow_alt=constrain_float(flow_alt, 0.0f, 100.0f);
 	if(lc302_data.quality==245){
 		opticalflow_state.healthy=true;
 		get_opticalflow=true;
@@ -408,17 +409,15 @@ void opticalflow_update(void){
 	opticalflow_state.flow_dt=(float)lc302_data.integration_timespan*0.000001f;
 	opticalflow_state.vel=opticalflow_state.vel_filter.apply(opticalflow_state.rads*flow_alt/opticalflow_state.flow_dt);
 	opticalflow_state.pos+=opticalflow_state.vel*opticalflow_state.flow_dt;
-	if(rangefinder_state.alt_healthy&&flow_alt<500){
-		get_gnss_location=true;
-		ned_current_vel.x=opticalflow_state.vel.x;
-		ned_current_vel.y=opticalflow_state.vel.y;
-		ned_current_pos.x+=opticalflow_state.vel.x*opticalflow_state.flow_dt;
-		ned_current_pos.y+=opticalflow_state.vel.y*opticalflow_state.flow_dt;
-		get_odom_xy=true;
-		odom_3d.x+=opticalflow_state.vel.x*opticalflow_state.flow_dt;
-		odom_3d.y+=opticalflow_state.vel.y*opticalflow_state.flow_dt;
-	}
 //	usb_printf("p:%f|%f,v:%f|%f\n",opticalflow_state.pos.x, opticalflow_state.pos.y, opticalflow_state.vel.x, opticalflow_state.vel.y);
+	get_gnss_location=true;
+	ned_current_vel.x=opticalflow_state.vel.x;
+	ned_current_vel.y=opticalflow_state.vel.y;
+	ned_current_pos.x+=opticalflow_state.vel.x*opticalflow_state.flow_dt;
+	ned_current_pos.y+=opticalflow_state.vel.y*opticalflow_state.flow_dt;
+	get_odom_xy=true;
+	odom_3d.x+=opticalflow_state.vel.x*opticalflow_state.flow_dt;
+	odom_3d.y+=opticalflow_state.vel.y*opticalflow_state.flow_dt;
 #endif
 }
 
@@ -2196,33 +2195,30 @@ void uwb_update(void){
 }
 
 //call at 50HZ
-bool uwb_pos_filt=false;
+static uint32_t currunt_uwb_ms, last_uwb_ms = 0;
+static Vector3f uwb_pos_last;
 void uwb_position_update(void){
-	write_gpio2(true);
+#if USE_UWB
 	FMU_LED6_Control(uwb->get_uwb_position);
-	if(uwb->uwb_position.x==0&&uwb->uwb_position.y==0){
+	if(!uwb->get_uwb_position){
 		return;
 	}
-	if(!uwb_pos_filt){
-		uwb_pos_filt=true;
-		_uwb_pos_filter.set_cutoff_frequency(50, uwb_pos_filt_hz);
+	uwb->get_uwb_position=false;
+	uwb_pos.x=uwb->uwb_position.x*cosf(uwb_yaw_delta)+uwb->uwb_position.y*sinf(uwb_yaw_delta);
+	uwb_pos.y=-uwb->uwb_position.x*sinf(uwb_yaw_delta)+uwb->uwb_position.y*cosf(uwb_yaw_delta);
+	uwb_pos.z=uwb->uwb_position.z;
+	currunt_uwb_ms=HAL_GetTick();
+	if(ekf_baro->vel_2d<25.0f){
+		uwb_pos.x=constrain_float(uwb_pos.x, uwb_pos_last.x-10.0f, uwb_pos_last.x+10.0f);
+		uwb_pos.y=constrain_float(uwb_pos.y, uwb_pos_last.y-10.0f, uwb_pos_last.y+10.0f);
 	}
-	if(uwb->get_uwb_position){
-		uwb->get_uwb_position=false;
-		float theta=1.65;
-		odom_3d.x=uwb->uwb_position.x*cosf(theta)+uwb->uwb_position.y*sinf(theta);
-		odom_3d.y=-uwb->uwb_position.x*sinf(theta)+uwb->uwb_position.y*cosf(theta);
-		odom_3d.z=uwb->uwb_position.z;
-		odom_3d = _uwb_pos_filter.apply(odom_3d);
-		if(odom_3d.z>30&&use_uwb_pos_z){
-			rangefinder_state.alt_healthy=true;
-			rangefinder_state.alt_cm=odom_3d.z;
-			rangefinder_state.last_healthy_ms=HAL_GetTick();
-		}else{
-			rangefinder_state.alt_healthy=false;
-		}
-		get_odom_xy=true;
-	}
+	uwb_pos = _uwb_pos_filter.apply(uwb_pos, (float)(currunt_uwb_ms-last_uwb_ms)/1000.0f);
+	uwb_pos_last=uwb_pos;
+	ned_current_pos.x=uwb_pos.x;
+	ned_current_pos.y=uwb_pos.y;
+	get_gnss_location=true;
+	last_uwb_ms = currunt_uwb_ms;
+#endif
 }
 
 void ekf_odom_xy(void){
@@ -2482,11 +2478,8 @@ float get_surface_tracking_climb_rate(float target_rate, float current_alt_targe
     uint32_t now = HAL_GetTick();
 
     // reset target altitude if this controller has just been engaged
-    if (now - last_call_ms > RANGEFINDER_TIMEOUT_MS) {
-    	if(robot_sub_mode!=MODE_AUTONAV){
-    		target_rangefinder_alt = rangefinder_state.alt_cm + current_alt_target - current_alt;
-    	}
-		hit_target_rangefinder_alt=false;
+    if (now - last_call_ms > RANGEFINDER_TIMEOUT_MS&&robot_sub_mode!=MODE_AUTONAV) {
+    	target_rangefinder_alt = rangefinder_state.alt_cm + current_alt_target - current_alt;
 	}
     last_call_ms = now;
 
@@ -2504,7 +2497,7 @@ float get_surface_tracking_climb_rate(float target_rate, float current_alt_targe
       reading
      */
     float glitch_cm = rangefinder_state.alt_cm - target_rangefinder_alt;
-    if(target_rangefinder_alt>20.0f){
+    if(!hit_target_rangefinder_alt&&target_rangefinder_alt>20.0f){
     	if(abs(glitch_cm)<10.0f){
     		hit_target_rangefinder_alt=true;
     		hit_time_ms=now;
@@ -2686,7 +2679,7 @@ void takeoff_start(float alt_cm)
     _takeoff_max_speed = speed;
     _takeoff_start_ms = HAL_GetTick();
     _takeoff_alt_delta = alt_cm;
-    use_uwb_pos_z=false;
+    takeoff_alt=get_pos_z();
     set_return(false);
 }
 
@@ -2709,7 +2702,6 @@ void takeoff_stop()
 	_takeoff=false;
 	_takeoff_running = false;
 	_takeoff_start_ms = 0;
-	use_uwb_pos_z=true;
 }
 
 // returns pilot and takeoff climb rates
